@@ -5,9 +5,7 @@
 figures_*/*
 saves/*
 runs/*
-demo/projection.csv
-demo/encoder.npy
-demo/labels.npy
+.idea
 
 ### Linux ###
 *~
