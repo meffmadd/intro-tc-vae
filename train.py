@@ -18,6 +18,7 @@ from dataset import UkiyoE, load_labels, image_dir
 import matplotlib.pyplot as plt
 import matplotlib
 from contextlib import nullcontext
+from solvers import VAESolver, IntroSolver
 
 from utils import *
 from models import SoftIntroVAE
@@ -26,6 +27,7 @@ matplotlib.use("Agg")
 
 
 def train_soft_intro_vae(
+    solver_type="vae",
     dataset="cifar10",
     arch="res",
     z_dim=128,
@@ -176,10 +178,6 @@ def train_soft_intro_vae(
         optimizer_d, milestones=(350,), gamma=0.1
     )
 
-    scale = 1 / (
-        ch * image_size ** 2
-    )  # normalize by images size (channels * height * width)
-
     train_data_loader = DataLoader(
         train_set,
         batch_size=batch_size,
@@ -192,45 +190,48 @@ def train_soft_intro_vae(
 
     grad_scaler = torch.cuda.amp.GradScaler()
 
+    if solver_type == "vae":
+        solver = VAESolver(
+            model=model,
+            optimizer_e=optimizer_e,
+            optimizer_d=optimizer_d,
+            beta_kl=beta_kl,
+            beta_rec=beta_rec,
+            device=device,
+            use_amp=use_amp,
+            grad_scaler=grad_scaler,
+            writer=writer,
+        )
+    elif solver_type == "intro":
+        solver = IntroSolver(
+            model=model,
+            optimizer_e=optimizer_e,
+            optimizer_d=optimizer_d,
+            beta_kl=beta_kl,
+            beta_rec=beta_rec,
+            beta_neg=beta_neg,
+            device=device,
+            use_amp=use_amp,
+            grad_scaler=grad_scaler,
+            writer=writer,
+        )
+    elif solver_type == "tc":
+        raise NotImplementedError()
+    elif solver_type == "intro-tc":
+        raise NotImplementedError()
+    else:
+        raise ValueError(f"Solver {solver_type} not supported!")
+
     cur_iter = 0
-    kls_real = []
-    kls_fake = []
-    kls_rec = []
-    rec_errs = []
-    exp_elbos_f = []
-    exp_elbos_r = []
     for epoch in range(start_epoch, num_epochs):
         diff_kls = []
         # save models
         if epoch % save_interval == 0 and epoch > 0:
             save_epoch = (epoch // save_interval) * save_interval
-            prefix = (
-                dataset
-                + "_soft_intro"
-                + "_betas_"
-                + str(beta_kl)
-                + "_"
-                + str(beta_neg)
-                + "_"
-                + str(beta_rec)
-                + "_zdim_"
-                + str(z_dim)
-                + "_"
-                + arch
-                + "_"
-                + optimizer
-                + "_"
-            )
+            prefix = f"{dataset}_{solver}_betas_{str(beta_kl)}_{str(beta_neg)}_{str(beta_rec)}_zdim_{z_dim}_{arch}_{optimizer}"
             save_checkpoint(model, save_epoch, cur_iter, prefix)
 
         model.train()
-
-        batch_kls_real = []
-        batch_kls_fake = []
-        batch_kls_rec = []
-        batch_rec_errs = []
-        batch_exp_elbo_f = []
-        batch_exp_elbo_r = []
 
         pbar = tqdm(iterable=train_data_loader)
 
@@ -244,246 +245,8 @@ def train_soft_intro_vae(
                 "ukiyo_e64",
             ]:
                 batch = batch[0]
-            if epoch < num_vae:
-                if len(batch.size()) == 3:
-                    batch = batch.unsqueeze(0)
-
-                batch_size = batch.size(0)
-
-                real_batch = batch.to(device)
-
-                # =========== Update E, D ================
-                with torch.cuda.amp.autocast() if use_amp else nullcontext():
-                    real_mu, real_logvar, z, rec = model(real_batch)
-
-                    loss_rec = calc_reconstruction_loss(
-                        real_batch, rec, loss_type=recon_loss_type, reduction="mean"
-                    )
-                    loss_kl = calc_kl(real_logvar, real_mu, reduce="mean")
-
-                    loss = beta_rec * loss_rec + beta_kl * loss_kl
-
-                optimizer_d.zero_grad()
-                optimizer_e.zero_grad()
-
-                if use_amp:
-                    grad_scaler.scale(loss).backward()
-                    grad_scaler.step(optimizer_e)
-                    grad_scaler.step(optimizer_d)
-                    grad_scaler.update()
-                else:
-                    loss.backward()
-                    optimizer_e.step()
-                    optimizer_d.step()
-
-                pbar.set_description_str("epoch #{}".format(epoch))
-                pbar.set_postfix(
-                    r_loss=loss_rec.data.cpu().item(), kl=loss_kl.data.cpu().item()
-                )
-
-                if cur_iter % test_iter == 0:
-                    vutils.save_image(
-                        torch.cat([real_batch, rec], dim=0).data.cpu(),
-                        "{}/image_{}.jpg".format(fig_dir, cur_iter),
-                        nrow=num_row,
-                    )
-
-            else:
-                if len(batch.size()) == 3:
-                    batch = batch.unsqueeze(0)
-
-                b_size = batch.size(0)
-                noise_batch = torch.randn(size=(b_size, z_dim)).to(device)
-
-                real_batch = batch.to(device)
-
-                # =========== Update E ================
-                for param in model.encoder.parameters():
-                    param.requires_grad = True
-                for param in model.decoder.parameters():
-                    param.requires_grad = False
-
-                with torch.cuda.amp.autocast() if use_amp else nullcontext():
-                    fake = model.sample(noise_batch)
-
-                    real_mu, real_logvar = model.encode(real_batch)
-                    z = reparameterize(real_mu, real_logvar)
-                    rec = model.decoder(z)
-
-                    loss_rec = calc_reconstruction_loss(
-                        real_batch, rec, loss_type=recon_loss_type, reduction="mean"
-                    )
-
-                    lossE_real_kl = calc_kl(real_logvar, real_mu, reduce="mean")
-
-                    rec_mu, rec_logvar, z_rec, rec_rec = model(rec.detach())
-                    fake_mu, fake_logvar, z_fake, rec_fake = model(fake.detach())
-
-                    kl_rec = calc_kl(rec_logvar, rec_mu, reduce="none")
-                    kl_fake = calc_kl(fake_logvar, fake_mu, reduce="none")
-
-                    loss_rec_rec_e = calc_reconstruction_loss(
-                        rec, rec_rec, loss_type=recon_loss_type, reduction="none"
-                    )
-                    while len(loss_rec_rec_e.shape) > 1:
-                        loss_rec_rec_e = loss_rec_rec_e.sum(-1)
-                    loss_rec_fake_e = calc_reconstruction_loss(
-                        fake, rec_fake, loss_type=recon_loss_type, reduction="none"
-                    )
-                    while len(loss_rec_fake_e.shape) > 1:
-                        loss_rec_fake_e = loss_rec_fake_e.sum(-1)
-
-                    expelbo_rec = (
-                        (-2 * scale * (beta_rec * loss_rec_rec_e + beta_neg * kl_rec))
-                        .exp()
-                        .mean()
-                    )
-                    expelbo_fake = (
-                        (-2 * scale * (beta_rec * loss_rec_fake_e + beta_neg * kl_fake))
-                        .exp()
-                        .mean()
-                    )
-
-                    lossE_fake = 0.25 * (expelbo_rec + expelbo_fake)
-                    lossE_real = scale * (beta_rec * loss_rec + beta_kl * lossE_real_kl)
-
-                    lossE = lossE_real + lossE_fake
-
-                optimizer_e.zero_grad()
-
-                if use_amp:
-                    grad_scaler.scale(lossE).backward()
-                    grad_scaler.step(optimizer_e)
-                else:
-                    lossE.backward()
-                    optimizer_e.step()
-
-                # ========= Update D ==================
-                for param in model.encoder.parameters():
-                    param.requires_grad = False
-                for param in model.decoder.parameters():
-                    param.requires_grad = True
-
-                with torch.cuda.amp.autocast() if use_amp else nullcontext():
-                    fake = model.sample(noise_batch)
-                    rec = model.decoder(z.detach())
-                    loss_rec = calc_reconstruction_loss(
-                        real_batch, rec, loss_type=recon_loss_type, reduction="mean"
-                    )
-
-                    rec_mu, rec_logvar = model.encode(rec)
-                    z_rec = reparameterize(rec_mu, rec_logvar)
-
-                    fake_mu, fake_logvar = model.encode(fake)
-                    z_fake = reparameterize(fake_mu, fake_logvar)
-
-                    rec_rec = model.decode(z_rec.detach())
-                    rec_fake = model.decode(z_fake.detach())
-
-                    loss_rec_rec = calc_reconstruction_loss(
-                        rec.detach(),
-                        rec_rec,
-                        loss_type=recon_loss_type,
-                        reduction="mean",
-                    )
-                    loss_fake_rec = calc_reconstruction_loss(
-                        fake.detach(),
-                        rec_fake,
-                        loss_type=recon_loss_type,
-                        reduction="mean",
-                    )
-
-                    lossD_rec_kl = calc_kl(rec_logvar, rec_mu, reduce="mean")
-                    lossD_fake_kl = calc_kl(fake_logvar, fake_mu, reduce="mean")
-
-                    lossD = scale * (
-                        loss_rec * beta_rec
-                        + (lossD_rec_kl + lossD_fake_kl) * 0.5 * beta_kl
-                        + gamma_r * 0.5 * beta_rec * (loss_rec_rec + loss_fake_rec)
-                    )
-
-                optimizer_d.zero_grad()
-
-                if use_amp:
-                    grad_scaler.scale(lossD).backward()
-                    grad_scaler.step(optimizer_d)
-                    grad_scaler.update()
-                else:
-                    lossD.backward()
-                    optimizer_d.step()
-
-                if torch.isnan(lossD) or torch.isnan(lossE):
-                    raise SystemError
-
-                dif_kl = -lossE_real_kl.data.cpu() + lossD_fake_kl.data.cpu()
-                pbar.set_description_str("epoch #{}".format(epoch))
-                pbar.set_postfix(
-                    r_loss=loss_rec.data.cpu().item(),
-                    kl=lossE_real_kl.data.cpu().item(),
-                    diff_kl=dif_kl.item(),
-                    expelbo_f=expelbo_fake.cpu().item(),
-                )
-
-                if writer:
-                    writer.add_scalars(
-                        "losses",
-                        dict(
-                            r_loss=loss_rec.data.cpu().item(),
-                            kl=lossE_real_kl.data.cpu().item(),
-                            expelbo_f=expelbo_fake.cpu().item(),
-                        ),
-                        global_step=cur_iter,
-                    )
-                    writer.add_scalar("diff_kl", dif_kl.item(), global_step=cur_iter)
-                    try:
-                        writer.add_scalars(
-                            "learning_rate",
-                            dict(
-                                e_lr=e_scheduler.get_last_lr()[0],
-                                d_lr=d_scheduler.get_last_lr()[0],
-                            ),
-                            global_step=cur_iter,
-                        )
-                    except IndexError:
-                        pass
-
-                diff_kls.append(
-                    -lossE_real_kl.data.cpu().item() + lossD_fake_kl.data.cpu().item()
-                )
-                batch_kls_real.append(lossE_real_kl.data.cpu().item())
-                batch_kls_fake.append(lossD_fake_kl.cpu().item())
-                batch_kls_rec.append(lossD_rec_kl.data.cpu().item())
-                batch_rec_errs.append(loss_rec.data.cpu().item())
-                batch_exp_elbo_f.append(expelbo_fake.data.cpu())
-                batch_exp_elbo_r.append(expelbo_rec.data.cpu())
-
-                if cur_iter % test_iter == 0:
-                    _, _, _, rec_det = model(real_batch, deterministic=True)
-                    max_imgs = min(batch.size(0), 16)
-                    vutils.save_image(
-                        torch.cat(
-                            [
-                                real_batch[:max_imgs],
-                                rec_det[:max_imgs],
-                                fake[:max_imgs],
-                            ],
-                            dim=0,
-                        ).data.cpu(),
-                        "{}/image_{}.jpg".format(fig_dir, cur_iter),
-                        nrow=num_row,
-                    )
-                    if writer:
-                        writer.add_images(
-                            f"image_{cur_iter}",
-                            torch.cat(
-                                [
-                                    real_batch[:max_imgs],
-                                    rec_det[:max_imgs],
-                                    fake[:max_imgs],
-                                ],
-                                dim=0,
-                            ).data.cpu(),
-                        )
+            # Perform train step with specific loss funtion
+            solver.train_step(batch, cur_iter)
 
             cur_iter += 1
         e_scheduler.step()
@@ -497,82 +260,15 @@ def train_soft_intro_vae(
             print("exiting...")
             raise SystemError("Negative KL Difference")
 
-        if epoch > num_vae - 1:
-            kls_real.append(np.mean(batch_kls_real))
-            kls_fake.append(np.mean(batch_kls_fake))
-            kls_rec.append(np.mean(batch_kls_rec))
-            rec_errs.append(np.mean(batch_rec_errs))
-            exp_elbos_f.append(np.mean(batch_exp_elbo_f))
-            exp_elbos_r.append(np.mean(batch_exp_elbo_r))
-            # epoch summary
-            print("#" * 50)
-            print(f"Epoch {epoch} Summary:")
-            print(f"beta_rec: {beta_rec}, beta_kl: {beta_kl}, beta_neg: {beta_neg}")
-            print(
-                f"rec: {rec_errs[-1]:.3f}, kl: {kls_real[-1]:.3f}, kl_fake: {kls_fake[-1]:.3f}, kl_rec: {kls_rec[-1]:.3f}"
-            )
-            print(
-                f"diff_kl: {np.mean(diff_kls):.3f}, exp_elbo_f: {exp_elbos_f[-1]:.4e}, exp_elbo_r: {exp_elbos_r[-1]:.4e}"
-            )
-            print(f"time: {time.time() - start_time}")
-            print("#" * 50)
+
         if epoch == num_epochs - 1:
-            with torch.no_grad():
-                _, _, _, rec_det = model(real_batch, deterministic=True)
-                noise_batch = torch.randn(size=(b_size, z_dim)).to(device)
-                fake = model.sample(noise_batch)
-                max_imgs = min(batch.size(0), 16)
-                vutils.save_image(
-                    torch.cat(
-                        [real_batch[:max_imgs], rec_det[:max_imgs], fake[:max_imgs]],
-                        dim=0,
-                    ).data.cpu(),
-                    "{}/image_{}.jpg".format(fig_dir, cur_iter),
-                    nrow=num_row,
-                )
-                if writer:
-                    writer.add_images(
-                        f"image_{cur_iter}",
-                        torch.cat(
-                            [
-                                real_batch[:max_imgs],
-                                rec_det[:max_imgs],
-                                fake[:max_imgs],
-                            ],
-                            dim=0,
-                        ).data.cpu(),
-                    )
-
-            # plot graphs
-            fig = plt.figure()
-            ax = fig.add_subplot(1, 1, 1)
-            ax.plot(np.arange(len(kls_real)), kls_real, label="kl_real")
-            ax.plot(np.arange(len(kls_fake)), kls_fake, label="kl_fake")
-            ax.plot(np.arange(len(kls_rec)), kls_rec, label="kl_rec")
-            ax.plot(np.arange(len(rec_errs)), rec_errs, label="rec_err")
-            ax.legend()
-
-            plt.savefig(os.path.join(fig_dir, "soft_intro_train_graphs.jpg"))
-            save_losses(fig_dir, kls_real, kls_fake, kls_rec, rec_errs)
+            b_size = batch.size(0)
+            real_batch = batch.to(solver.device)
+            noise_batch = torch.randn(size=(b_size, z_dim)).to(device)
+            fake = model.sample(noise_batch)
+            solver.write_images(real_batch, fake, cur_iter)
 
             # save models
-            prefix = (
-                dataset
-                + "_soft_intro"
-                + "_betas_"
-                + str(beta_kl)
-                + "_"
-                + str(beta_neg)
-                + "_"
-                + str(beta_rec)
-                + "_zdim_"
-                + str(z_dim)
-                + "_"
-                + arch
-                + "_"
-                + optimizer
-                + "_"
-            )
+            prefix = f"{dataset}_{solver}_betas_{str(beta_kl)}_{str(beta_neg)}_{str(beta_rec)}_zdim_{z_dim}_{arch}_{optimizer}"
             save_checkpoint(model, epoch, cur_iter, prefix)
             model.train()
-

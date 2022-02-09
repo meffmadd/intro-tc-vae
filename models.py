@@ -313,7 +313,8 @@ class SoftIntroVAE(nn.Module):
     ):
         super(SoftIntroVAE, self).__init__()
 
-        self.zdim = zdim
+        self.zdim: int = zdim
+        self.cdim: int = cdim
         self.conditional = conditional
         self.cond_dim = cond_dim
 
