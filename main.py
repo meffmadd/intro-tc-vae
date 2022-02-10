@@ -118,7 +118,6 @@ if __name__ == "__main__":
         num_epochs=args.num_epochs,
         dropout=args.dropout,
         optimizer=args.optimizer,
-        num_vae=args.num_vae,
         beta_kl=args.beta_kl,
         beta_neg=args.beta_neg,
         beta_rec=args.beta_rec,

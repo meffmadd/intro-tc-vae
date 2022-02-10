@@ -38,10 +38,8 @@ def train_soft_intro_vae(
     start_epoch=0,
     exit_on_negative_diff=False,
     num_epochs=250,
-    num_vae=0,
     save_interval=50,
     optimizer="adam",
-    recon_loss_type="mse",
     beta_kl=1.0,
     beta_rec=1.0,
     beta_neg=1.0,
@@ -50,14 +48,14 @@ def train_soft_intro_vae(
     seed=-1,
     pretrained=None,
     device=torch.device("cpu"),
-    num_row=8,
-    gamma_r=1e-8,
     use_tensorboard=False,
     use_amp=False,
 ):
     """
+    :param solver_type: the type of objective function to be optimized: ['vae','intro','tc','intro-tc']
     :param dataset: dataset to train on: ['ukiyo_e256', 'ukiyo_e128', 'ukiyo_e64', 'cifar10', 'fmnist']
-    :param z_dim: latent dimensions
+    :param arch: model architecture: ['conv', 'res', 'inception']
+    :param z_dim: number of latent dimensions
     :param lr_e: learning rate for encoder
     :param lr_d: learning rate for decoder
     :param batch_size: batch size
@@ -65,10 +63,8 @@ def train_soft_intro_vae(
     :param start_epoch: epoch to start from
     :param exit_on_negative_diff: stop run if mean kl diff between fake and real is negative after 50 epochs
     :param num_epochs: total number of epochs to run
-    :param num_vae: number of epochs for vanilla vae training
     :param save_interval: epochs between checkpoint saving
     :param optimizer: the type of optimizer to use for training
-    :param recon_loss_type: type of reconstruction loss ('mse', 'l1', 'bce')
     :param beta_kl: beta coefficient for the kl divergence
     :param beta_rec: beta coefficient for the reconstruction loss
     :param beta_neg: beta coefficient for the kl divergence in the expELBO function
@@ -77,8 +73,6 @@ def train_soft_intro_vae(
     :param seed: seed
     :param pretrained: path to pretrained model, to continue training
     :param device: device to run calculation on - torch.device('cuda:x') or torch.device('cpu')
-    :param num_row: number of images in a row gor the sample image saving
-    :param gamma_r: coefficient for the reconstruction loss for fake data in the decoder
     :param use_tensorboard: whether to write the model loss and output to be used for tensorboard
     :param use_amp: whether to use automatic multi precision
     :return:
@@ -185,8 +179,6 @@ def train_soft_intro_vae(
         num_workers=num_workers,
         pin_memory=True,
     )
-
-    start_time = time.time()
 
     grad_scaler = torch.cuda.amp.GradScaler()
 
