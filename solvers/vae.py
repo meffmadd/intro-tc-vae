@@ -7,7 +7,7 @@ from torch import Tensor
 from torch.cuda.amp.grad_scaler import GradScaler
 from torch.utils.tensorboard import SummaryWriter
 
-from utils import calc_kl, calc_reconstruction_loss
+from ops import kl_divergence, reconstruction_loss
 
 
 class VAESolver:
@@ -47,10 +47,10 @@ class VAESolver:
         with torch.cuda.amp.autocast() if self.use_amp else nullcontext():
             real_mu, real_logvar, z, rec = self.model(real_batch)
 
-            loss_rec = calc_reconstruction_loss(
+            loss_rec = reconstruction_loss(
                 real_batch, rec, loss_type=self.recon_loss_type, reduction="mean"
             )
-            loss_kl = calc_kl(real_logvar, real_mu, reduce="mean")
+            loss_kl = kl_divergence(real_logvar, real_mu, reduce="mean")
 
             loss = self.beta_rec * loss_rec + self.beta_kl * loss_kl
 

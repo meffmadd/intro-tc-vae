@@ -8,7 +8,7 @@ from torch import Tensor
 from torch.cuda.amp.grad_scaler import GradScaler
 from torch.utils.tensorboard import SummaryWriter
 
-from utils import calc_kl, calc_reconstruction_loss, reparameterize
+from ops import kl_divergence, reconstruction_loss, reparameterize
 
 
 class IntroSolver(VAESolver):
@@ -65,24 +65,24 @@ class IntroSolver(VAESolver):
             z = reparameterize(real_mu, real_logvar)
             rec = self.model.decoder(z)
 
-            loss_rec = calc_reconstruction_loss(
+            loss_rec = reconstruction_loss(
                 real_batch, rec, loss_type=self.recon_loss_type, reduction="mean"
             )
 
-            lossE_real_kl = calc_kl(real_logvar, real_mu, reduce="mean")
+            lossE_real_kl = kl_divergence(real_logvar, real_mu, reduce="mean")
 
             rec_mu, rec_logvar, z_rec, rec_rec = self.model(rec.detach())
             fake_mu, fake_logvar, z_fake, rec_fake = self.model(fake.detach())
 
-            kl_rec = calc_kl(rec_logvar, rec_mu, reduce="none")
-            kl_fake = calc_kl(fake_logvar, fake_mu, reduce="none")
+            kl_rec = kl_divergence(rec_logvar, rec_mu, reduce="none")
+            kl_fake = kl_divergence(fake_logvar, fake_mu, reduce="none")
 
-            loss_rec_rec_e = calc_reconstruction_loss(
+            loss_rec_rec_e = reconstruction_loss(
                 rec, rec_rec, loss_type=self.recon_loss_type, reduction="none"
             )
             while len(loss_rec_rec_e.shape) > 1:
                 loss_rec_rec_e = loss_rec_rec_e.sum(-1)
-            loss_rec_fake_e = calc_reconstruction_loss(
+            loss_rec_fake_e = reconstruction_loss(
                 fake, rec_fake, loss_type=self.recon_loss_type, reduction="none"
             )
             while len(loss_rec_fake_e.shape) > 1:
@@ -132,7 +132,7 @@ class IntroSolver(VAESolver):
         with torch.cuda.amp.autocast() if self.use_amp else nullcontext():
             fake = self.model.sample(noise_batch)
             rec = self.model.decoder(z.detach())
-            loss_rec = calc_reconstruction_loss(
+            loss_rec = reconstruction_loss(
                 real_batch, rec, loss_type=self.recon_loss_type, reduction="mean"
             )
 
@@ -145,21 +145,21 @@ class IntroSolver(VAESolver):
             rec_rec = self.model.decode(z_rec.detach())
             rec_fake = self.model.decode(z_fake.detach())
 
-            loss_rec_rec = calc_reconstruction_loss(
+            loss_rec_rec = reconstruction_loss(
                 rec.detach(),
                 rec_rec,
                 loss_type=self.recon_loss_type,
                 reduction="mean",
             )
-            loss_fake_rec = calc_reconstruction_loss(
+            loss_fake_rec = reconstruction_loss(
                 fake.detach(),
                 rec_fake,
                 loss_type=self.recon_loss_type,
                 reduction="mean",
             )
 
-            lossD_rec_kl = calc_kl(rec_logvar, rec_mu, reduce="mean")
-            lossD_fake_kl = calc_kl(fake_logvar, fake_mu, reduce="mean")
+            lossD_rec_kl = kl_divergence(rec_logvar, rec_mu, reduce="mean")
+            lossD_fake_kl = kl_divergence(fake_logvar, fake_mu, reduce="mean")
 
             lossD = self.scale * (
                 loss_rec * self.beta_rec

@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from utils import reparameterize
+from ops import reparameterize
 
 
 class ConvolutionalBlock(nn.Module):
