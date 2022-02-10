@@ -22,6 +22,7 @@ class VAESolver:
         use_amp: bool,
         grad_scaler: Optional[GradScaler],
         writer: Optional[SummaryWriter] = None,
+        test_iter: int = 1000
     ):
         self.model = model
         self.optimizer_e = optimizer_e
@@ -32,6 +33,7 @@ class VAESolver:
         self.use_amp = use_amp
         self.grad_scaler = grad_scaler
         self.writer = writer
+        self.test_iter = test_iter
 
         self.recon_loss_type = "mse"
 
@@ -71,19 +73,20 @@ class VAESolver:
                 loss_rec=loss_rec.data.cpu().item(), loss_kl=loss_kl.data.cpu().item()
             ),
         )
-        self._write_images_helper(batch, cur_iter)
+        self._write_images_helper(real_batch, cur_iter)
 
     def _write_images_helper(self, batch, cur_iter):
-        b_size = batch.size(0)
-        noise_batch = torch.randn(size=(b_size, self.model.zdim)).to(self.device)
-        fake = self.model.sample(noise_batch)
-        self.write_images(batch, fake, cur_iter)
+        if self.writer is not None and cur_iter % self.test_iter == 0:
+            b_size = batch.size(0)
+            noise_batch = torch.randn(size=(b_size, self.model.zdim)).to(self.device)
+            fake = self.model.sample(noise_batch).to(self.device)
+            self.write_images(batch, fake, cur_iter)
 
     def write_images(self, batch, fake_batch, cur_iter):
-        with torch.no_grad():
-            _, _, _, rec_det = self.model(batch, deterministic=True)
-            max_imgs = min(batch.size(0), 16)
-            if self.writer:
+        if self.writer is not None and cur_iter % self.test_iter == 0:
+            with torch.no_grad():
+                _, _, _, rec_det = self.model(batch, deterministic=True)
+                max_imgs = min(batch.size(0), 16)
                 self.writer.add_images(
                     f"image_{cur_iter}",
                     torch.cat(

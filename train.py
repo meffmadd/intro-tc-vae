@@ -201,6 +201,7 @@ def train_soft_intro_vae(
             use_amp=use_amp,
             grad_scaler=grad_scaler,
             writer=writer,
+            test_iter=test_iter
         )
     elif solver_type == "intro":
         solver = IntroSolver(
@@ -214,6 +215,7 @@ def train_soft_intro_vae(
             use_amp=use_amp,
             grad_scaler=grad_scaler,
             writer=writer,
+            test_iter=test_iter
         )
     elif solver_type == "tc":
         raise NotImplementedError()

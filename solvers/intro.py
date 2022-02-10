@@ -24,6 +24,7 @@ class IntroSolver(VAESolver):
         use_amp: bool,
         grad_scaler: Optional[GradScaler],
         writer: Optional[SummaryWriter] = None,
+        test_iter: int = 1000
     ):
         super().__init__(
             model,
@@ -35,6 +36,7 @@ class IntroSolver(VAESolver):
             use_amp,
             grad_scaler,
             writer,
+            test_iter
         )
         self.beta_neg = beta_neg
         self.gamma_r = 1e-8
@@ -188,4 +190,4 @@ class IntroSolver(VAESolver):
             ),
             diff_kl=dif_kl.item(),
         )
-        self.write_images(batch, fake, cur_iter)
+        self.write_images(real_batch, fake, cur_iter)
