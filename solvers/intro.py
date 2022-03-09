@@ -1,5 +1,5 @@
 from contextlib import nullcontext
-from typing import Optional, Tuple
+from typing import Optional
 from models import SoftIntroVAE
 from solvers.vae import VAESolver
 import torch

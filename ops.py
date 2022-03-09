@@ -11,10 +11,10 @@ def gaussian_log_density(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
     """
     Computes the log density of a Gaussian. This is just the simplified log of the PDF of a normal distribution.
     """
-    log2pi = torch.log(Tensor([2.0 * math.pi]))
-    inv_sigma = torch.exp(-logvar)
+    log2pi = torch.log(Tensor([2.0 * math.pi])).to(x.device)
+    inv_var = torch.exp(-logvar)
     delta = x - mu
-    return -0.5 * (torch.square(delta) * inv_sigma + logvar + log2pi)
+    return -0.5 * (torch.square(delta) * inv_var + logvar + log2pi)
 
 
 def batch_gaussian_density(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
@@ -66,8 +66,8 @@ def log_pz(x: Tensor) -> Tensor:
     log_pz = torch.sum(
         gaussian_log_density(
             x,
-            torch.zeros(x.shape),
-            torch.zeros(x.shape),
+            torch.zeros(x.shape, device=x.device),
+            torch.zeros(x.shape, device=x.device),
         ),
         dim=1,
     )

@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 from contextlib import nullcontext
 from solvers import VAESolver, IntroSolver
+from solvers.tc import TCVAESovler
 
 from utils import *
 from models import SoftIntroVAE
@@ -182,35 +183,24 @@ def train_soft_intro_vae(
 
     grad_scaler = torch.cuda.amp.GradScaler()
 
+    solver_kwargs = dict(
+        model=model,
+        optimizer_e=optimizer_e,
+        optimizer_d=optimizer_d,
+        beta_kl=beta_kl,
+        beta_rec=beta_rec,
+        device=device,
+        use_amp=use_amp,
+        grad_scaler=grad_scaler,
+        writer=writer,
+        test_iter=test_iter,
+    )
     if solver_type == "vae":
-        solver = VAESolver(
-            model=model,
-            optimizer_e=optimizer_e,
-            optimizer_d=optimizer_d,
-            beta_kl=beta_kl,
-            beta_rec=beta_rec,
-            device=device,
-            use_amp=use_amp,
-            grad_scaler=grad_scaler,
-            writer=writer,
-            test_iter=test_iter
-        )
+        solver = VAESolver(**solver_kwargs)
     elif solver_type == "intro":
-        solver = IntroSolver(
-            model=model,
-            optimizer_e=optimizer_e,
-            optimizer_d=optimizer_d,
-            beta_kl=beta_kl,
-            beta_rec=beta_rec,
-            beta_neg=beta_neg,
-            device=device,
-            use_amp=use_amp,
-            grad_scaler=grad_scaler,
-            writer=writer,
-            test_iter=test_iter
-        )
+        solver = IntroSolver(**solver_kwargs, beta_neg=beta_neg)
     elif solver_type == "tc":
-        raise NotImplementedError()
+        solver = TCVAESovler(**solver_kwargs)
     elif solver_type == "intro-tc":
         raise NotImplementedError()
     else:
@@ -253,7 +243,6 @@ def train_soft_intro_vae(
             print("try to lower beta_neg hyperparameter")
             print("exiting...")
             raise SystemError("Negative KL Difference")
-
 
         if epoch == num_epochs - 1:
             b_size = batch.size(0)
