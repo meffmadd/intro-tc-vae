@@ -14,7 +14,7 @@ import random
 import time
 import numpy as np
 from tqdm import tqdm
-from dataset import UkiyoE, load_labels, image_dir
+from dataset import UkiyoE
 import matplotlib.pyplot as plt
 import matplotlib
 from contextlib import nullcontext
@@ -113,17 +113,17 @@ def train_soft_intro_vae(
     elif dataset == "ukiyo_e256":
         image_size = 256
         channels = [64, 128, 256, 512, 512, 512]
-        train_set = UkiyoE(image_dir, load_labels(), "Painter")
+        train_set = UkiyoE.load_data()
         ch = 3
     elif dataset == "ukiyo_e128":
         image_size = 128
         channels = [64, 128, 256, 512, 512]
-        train_set = UkiyoE(image_dir, load_labels(), "Painter", resize=image_size)
+        train_set = UkiyoE.load_data(resize=image_size)
         ch = 3
     elif dataset == "ukiyo_e64":
         image_size = 64
         channels = [64, 128, 256, 512]
-        train_set = UkiyoE(image_dir, load_labels(), "Painter", resize=image_size)
+        train_set = UkiyoE.load_data(resize=image_size)
         ch = 3
     else:
         raise NotImplementedError("dataset is not supported")

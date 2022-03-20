@@ -1,5 +1,6 @@
 import torch
 import torch.utils.data as data
+import numpy as np
 import pandas as pd
 import os
 from os.path import join
@@ -9,47 +10,37 @@ import torchvision.transforms as transforms
 from torchvision.io import read_image
 from torchvision.transforms.functional import resize
 
-data_dir = os.path.expanduser("~/arc-ukiyoe-faces/scratch")
-image_dir = data_dir + "/arc_extracted_face_images"
 
+class DisentanglementDataset(data.Dataset):
+    @classmethod
+    def load_data(cls, resize: int = 256) -> "DisentanglementDataset":
+        raise NotImplementedError()
 
-def load_labels():
-    labels: pd.DataFrame = pd.read_csv(data_dir + "/arc_extracted_face_metadata.csv")
-    labels.columns = [
-        "ACNo.",
-        "Print title",
-        "Picture name",
-        "Official title",
-        "Text",
-        "Publisher",
-        "Format",
-        "Direction",
-        "Seal",
-        "Painter",
-        "revised seals",
-        "Year in A.D.",
-        "Year in Japanese Calender",
-        "Region",
-        "Theater",
-        "Title of play",
-        "Reading of Title of play",
-        "Performed title",
-        "Reading of Performed title",
-        "Main performed title",
-        "Classification title",
-        "Library",
-        "Text",
-        "homeURL",
-        "SmallImageURL",
-        "LargeImageURL",
-        "filename",
-    ]
-    labels = labels[["Painter", "Year in A.D.", "Region", "filename"]]
-    labels["Painter"] = labels["Painter"].astype(str)
-    return labels
+class DSprites(DisentanglementDataset):
+    def __init__(self, arr, resize: int = 64) -> None:
+        self.imgs = arr['imgs']
+        self.latents_values = arr['latents_values']
+        self.latents_classes = arr['latents_classes']
+        self.resize = resize
+    
+    def __len__(self):
+        return len(self.imgs)
+    
+    def __getitem__(self, index):
+        img = Image.fromarray(self.imgs[index])
+        label = self.latents_values[index]
+        if self.resize != 64:
+            img.resize((self.resize, self.resize), Image.BICUBIC)
+        return img, label 
 
+    @classmethod
+    def load_data(cls, resize: int = 64) -> "DisentanglementDataset":
+        data_dir = os.path.expanduser("~/dsprites-dataset")
+        data_path = os.path.join(data_dir, "dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz")
+        arr = np.load(data_path)
+        return DSprites(arr, resize=resize)
 
-class UkiyoE(data.Dataset):
+class UkiyoE(DisentanglementDataset):
     def __init__(self, root, df, category, resize=256):
         self.root = root
         self.labels = df
@@ -83,6 +74,50 @@ class UkiyoE(data.Dataset):
         )
         image = self.input_transform(image)
         return image, label
+
+    @classmethod
+    def load_data(cls, resize: int = 256) -> "DisentanglementDataset":
+        data_dir = os.path.expanduser("~/arc-ukiyoe-faces/scratch")
+        image_dir = data_dir + "/arc_extracted_face_images"
+        return UkiyoE(image_dir, UkiyoE.load_labels(data_dir), "Painter", resize=resize)
+
+    @classmethod
+    def load_labels(cls, data_dir) -> pd.DataFrame:
+        labels: pd.DataFrame = pd.read_csv(
+            data_dir + "/arc_extracted_face_metadata.csv"
+        )
+        labels.columns = [
+            "ACNo.",
+            "Print title",
+            "Picture name",
+            "Official title",
+            "Text",
+            "Publisher",
+            "Format",
+            "Direction",
+            "Seal",
+            "Painter",
+            "revised seals",
+            "Year in A.D.",
+            "Year in Japanese Calender",
+            "Region",
+            "Theater",
+            "Title of play",
+            "Reading of Title of play",
+            "Performed title",
+            "Reading of Performed title",
+            "Main performed title",
+            "Classification title",
+            "Library",
+            "Text",
+            "homeURL",
+            "SmallImageURL",
+            "LargeImageURL",
+            "filename",
+        ]
+        labels = labels[["Painter", "Year in A.D.", "Region", "filename"]]
+        labels["Painter"] = labels["Painter"].astype(str)
+        return labels
 
 
 def load_image(
