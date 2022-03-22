@@ -1,3 +1,4 @@
+from typing import List
 import torch
 import torch.utils.data as data
 import numpy as np
@@ -12,6 +13,14 @@ from torchvision.transforms.functional import resize
 
 
 class DisentanglementDataset(data.Dataset):
+    @property
+    def latent_indices(self) -> List[int]:
+        raise NotImplementedError()
+    
+    @property
+    def factor_sizes(self) -> List[int]:
+        raise NotImplementedError()
+
     @classmethod
     def load_data(cls, resize: int = 256) -> "DisentanglementDataset":
         raise NotImplementedError()
@@ -22,6 +31,7 @@ class DSprites(DisentanglementDataset):
         self.latents_values = arr['latents_values']
         self.latents_classes = arr['latents_classes']
         self.resize = resize
+        self.input_transform = transforms.Compose([transforms.ToTensor()])
     
     def __len__(self):
         return len(self.imgs)
@@ -30,8 +40,17 @@ class DSprites(DisentanglementDataset):
         img = Image.fromarray(self.imgs[index])
         label = self.latents_values[index]
         if self.resize != 64:
-            img.resize((self.resize, self.resize), Image.BICUBIC)
+            img = img.resize((self.resize, self.resize), Image.BICUBIC)
+        img = self.input_transform(img)
         return img, label 
+    
+    @property
+    def latent_indices(self) -> List[int]:
+        return [1, 2, 3, 4, 5]
+    
+    @property
+    def factor_sizes(self) -> List[int]:
+        return [1, 3, 6, 40, 32, 32]
 
     @classmethod
     def load_data(cls, resize: int = 64) -> "DisentanglementDataset":
