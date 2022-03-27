@@ -1,5 +1,8 @@
 from contextlib import nullcontext
 from typing import Optional, Tuple
+from dataset import DisentanglementDataset
+from evaluation.generator import LatentGenerator
+from evaluation.metrics import compute_bvae_score
 from models import SoftIntroVAE
 import torch
 from torch.optim import Optimizer
@@ -13,7 +16,9 @@ from ops import kl_divergence, reconstruction_loss
 class VAESolver:
     def __init__(
         self,
+        dataset: DisentanglementDataset,
         model: SoftIntroVAE,
+        batch_size: int,
         optimizer_e: Optimizer,
         optimizer_d: Optimizer,
         beta_kl: float,
@@ -22,9 +27,13 @@ class VAESolver:
         use_amp: bool,
         grad_scaler: Optional[GradScaler],
         writer: Optional[SummaryWriter] = None,
-        test_iter: int = 1000
+        test_iter: int = 1000,
     ):
+        self.dataset = dataset
+        if isinstance(self.dataset, DisentanglementDataset):
+            self.latent_generator = LatentGenerator(self.dataset, device)
         self.model = model
+        self.batch_size = batch_size
         self.optimizer_e = optimizer_e
         self.optimizer_d = optimizer_d
         self.beta_kl = beta_kl
@@ -74,6 +83,7 @@ class VAESolver:
             ),
         )
         self._write_images_helper(real_batch, cur_iter)
+        self.write_disentanglemnt_scores(cur_iter)
 
     def _write_images_helper(self, batch, cur_iter):
         if self.writer is not None and cur_iter % self.test_iter == 0:
@@ -99,12 +109,27 @@ class VAESolver:
                     ).data.cpu(),
                 )
 
-    def write_scalars(self, cur_iter, losses: dict, **kwargs):
+    def write_scalars(self, cur_iter: int, losses: dict, **kwargs):
         if self.writer is not None:
             self.write_losses(cur_iter, losses)
             for name, value in kwargs.items():
                 self.writer.add_scalar(name, value, global_step=cur_iter)
 
-    def write_losses(self, cur_iter, losses):
+    def write_losses(self, cur_iter: int, losses: dict):
         if self.writer is not None:
             self.writer.add_scalars("losses", losses, global_step=cur_iter)
+
+    def write_disentanglemnt_scores(self, cur_iter: int, num_samples: int = 10000):
+        if (
+            self.writer is not None
+            and isinstance(self.dataset, DisentanglementDataset)
+            and cur_iter % self.test_iter == 0
+        ):
+            bvae_score = compute_bvae_score(
+                self.latent_generator,
+                self.model,
+                num_samples=num_samples,
+                batch_size=self.batch_size,
+                params=dict(scale=True)
+            )
+            self.writer.add_scalar("bvae_score", bvae_score, global_step=cur_iter)

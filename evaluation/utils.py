@@ -1,8 +1,11 @@
 from typing import Tuple
 import numpy as np
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import StandardScaler
 import torch
 from dataset import DisentanglementDataset
-from metrics.generator import LatentGenerator
+from evaluation.generator import LatentGenerator
 from models import SoftIntroVAE
 
 
@@ -91,22 +94,22 @@ def generate_factor_change_batch(
 
     # sample ground truth factors and set a single factor v_k to
     # be the same (v_ik = v_jk)
-    v_li = latent_generator.sample_factors_of_variation(batch_size, random_state)
-    v_lj = latent_generator.sample_factors_of_variation(batch_size, random_state)
+    v_li = latent_generator.sample_factors_of_variation(batch_size)
+    v_lj = latent_generator.sample_factors_of_variation(batch_size)
     v_li[:, factor_index] = v_lj[:, factor_index]
 
     # Sim(vli, cli)
-    x_li = latent_generator.sample_observations_from_factors(v_li, random_state)
+    x_li = latent_generator.sample_observations_from_factors(v_li)
     # Sim(vlj, clj)
-    x_lj = latent_generator.sample_observations_from_factors(v_lj, random_state)
+    x_lj = latent_generator.sample_observations_from_factors(v_lj)
 
     # z_li = mu(x_li), z_lj = mu(x_lj)
     # real_mu, real_logvar, z, rec
-    z_mean_li, _, _, _ = model(x_li)
-    z_mean_lj, _, _, _ = model(x_lj)
+    z_mean_li, _ = model.encode(x_li)
+    z_mean_lj, _ = model.encode(x_lj)
 
-    z_mean_li: np.ndarray = z_mean_li.cpu().numpy()
-    z_mean_lj: np.ndarray = z_mean_lj.cpu().numpy()
+    z_mean_li: np.ndarray = z_mean_li.cpu().detach().numpy()
+    z_mean_lj: np.ndarray = z_mean_lj.cpu().detach().numpy()
 
     # z_diff = 1/L * sum_l (|z_li - z_lj|)
     z_mean_li = z_mean_li.reshape(batch_size, -1)
@@ -136,8 +139,6 @@ def generate_factor_change(
         Number of latent representations to generate.
     batch_size : int (default=64)
         Number of samples to generate per batch.
-    random_state : np.random.RandomState
-        Pseudo-random number generator.
     Returns
     -------
     z_diff : np.ndarray
@@ -158,3 +159,26 @@ def generate_factor_change(
         y.append(y_batch)
 
     return np.array(Z_diff, dtype=np.float32), np.array(y, dtype=np.int8)
+
+
+def compute_factor_change_accuracy(x_train,
+                                   y_train,
+                                   x_test,
+                                   y_test,
+                                   params=None) -> float:
+    """
+    Calculates the factor change classification score proposed in
+    https://openreview.net/references/pdf?id=Sy2fzU9gl.
+    """
+    params = params or {}
+    lr_params = params.get('bvae_lr_params', {})
+    if params.get('scale'):
+        scl = StandardScaler()
+        x_train = scl.fit_transform(x_train)
+        x_test = scl.transform(x_test)
+
+    clf = LogisticRegression(**lr_params)
+    clf.fit(x_train, y_train)
+
+    bvae_score: float = accuracy_score(y_test, clf.predict(x_test), normalize=True)
+    return bvae_score

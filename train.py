@@ -14,7 +14,7 @@ import random
 import time
 import numpy as np
 from tqdm import tqdm
-from dataset import UkiyoE
+from dataset import DSprites, UkiyoE
 import matplotlib.pyplot as plt
 import matplotlib
 from contextlib import nullcontext
@@ -90,27 +90,7 @@ def train_soft_intro_vae(
     torch.backends.cudnn.benchmark = True
 
     # --------------build models -------------------------
-    if dataset == "cifar10":
-        image_size = 32
-        channels = [64, 128, 256]
-        train_set = CIFAR10(
-            root="./cifar10_ds",
-            train=True,
-            download=True,
-            transform=transforms.ToTensor(),
-        )
-        ch = 3
-    elif dataset == "fmnist":
-        image_size = 28
-        channels = [64, 128]
-        train_set = FashionMNIST(
-            root="./fmnist_ds",
-            train=True,
-            download=True,
-            transform=transforms.ToTensor(),
-        )
-        ch = 1
-    elif dataset == "ukiyo_e256":
+    if dataset == "ukiyo_e256":
         image_size = 256
         channels = [64, 128, 256, 512, 512, 512]
         train_set = UkiyoE.load_data()
@@ -125,6 +105,11 @@ def train_soft_intro_vae(
         channels = [64, 128, 256, 512]
         train_set = UkiyoE.load_data(resize=image_size)
         ch = 3
+    elif dataset == "dsprites":
+        image_size = 64
+        channels = [64, 128, 256, 512]
+        train_set = DSprites.load_data()
+        ch = 1
     else:
         raise NotImplementedError("dataset is not supported")
 
@@ -184,7 +169,9 @@ def train_soft_intro_vae(
     grad_scaler = torch.cuda.amp.GradScaler()
 
     solver_kwargs = dict(
+        dataset=train_set,
         model=model,
+        batch_size=batch_size,
         optimizer_e=optimizer_e,
         optimizer_d=optimizer_d,
         beta_kl=beta_kl,
@@ -222,11 +209,10 @@ def train_soft_intro_vae(
         for batch in pbar:
             # --------------train------------
             if dataset in [
-                "cifar10",
-                "fmnist",
                 "ukiyo_e256",
                 "ukiyo_e128",
                 "ukiyo_e64",
+                "dsprites"
             ]:
                 batch = batch[0]
             # Perform train step with specific loss funtion

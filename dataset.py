@@ -11,7 +11,6 @@ import torchvision.transforms as transforms
 from torchvision.io import read_image
 from torchvision.transforms.functional import resize
 
-
 class DisentanglementDataset(data.Dataset):
     @property
     def latent_indices(self) -> List[int]:
@@ -21,13 +20,11 @@ class DisentanglementDataset(data.Dataset):
     def factor_sizes(self) -> List[int]:
         raise NotImplementedError()
 
-    @classmethod
-    def load_data(cls, resize: int = 256) -> "DisentanglementDataset":
-        raise NotImplementedError()
+
 
 class DSprites(DisentanglementDataset):
     def __init__(self, arr, resize: int = 64) -> None:
-        self.imgs = arr['imgs']
+        self.imgs = arr['imgs'] * 255
         self.latents_values = arr['latents_values']
         self.latents_classes = arr['latents_classes']
         self.resize = resize
@@ -36,7 +33,7 @@ class DSprites(DisentanglementDataset):
     def __len__(self):
         return len(self.imgs)
     
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
         img = Image.fromarray(self.imgs[index])
         label = self.latents_values[index]
         if self.resize != 64:
@@ -59,7 +56,7 @@ class DSprites(DisentanglementDataset):
         arr = np.load(data_path)
         return DSprites(arr, resize=resize)
 
-class UkiyoE(DisentanglementDataset):
+class UkiyoE(data.Dataset):
     def __init__(self, root, df, category, resize=256):
         self.root = root
         self.labels = df
@@ -159,12 +156,12 @@ def load_image(
         crop_width = crop_height
 
     img = Image.open(file_path)
-    if is_gray is False and img.mode is not "RGB":
+    if not is_gray and img.mode != "RGB":
         img = img.convert("RGB")
-    if is_gray and img.mode is not "L":
+    if is_gray and img.mode != "L":
         img = img.convert("L")
 
-    if is_mirror and random.randint(0, 1) is 0:
+    if is_mirror and random.randint(0, 1) == 0:
         img = ImageOps.mirror(img)
 
     if input_height is not None:

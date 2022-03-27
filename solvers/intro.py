@@ -1,5 +1,6 @@
 from contextlib import nullcontext
 from typing import Optional
+from dataset import DisentanglementDataset
 from models import SoftIntroVAE
 from solvers.vae import VAESolver
 import torch
@@ -14,7 +15,9 @@ from ops import kl_divergence, reconstruction_loss, reparameterize
 class IntroSolver(VAESolver):
     def __init__(
         self,
+        dataset: DisentanglementDataset,
         model: SoftIntroVAE,
+        batch_size: int,
         optimizer_e: Optimizer,
         optimizer_d: Optimizer,
         beta_kl: float,
@@ -27,7 +30,9 @@ class IntroSolver(VAESolver):
         test_iter: int = 1000
     ):
         super().__init__(
+            dataset,
             model,
+            batch_size,
             optimizer_e,
             optimizer_d,
             beta_kl,
@@ -191,3 +196,4 @@ class IntroSolver(VAESolver):
             diff_kl=dif_kl.item(),
         )
         self.write_images(real_batch, fake, cur_iter)
+        self.write_disentanglemnt_scores(cur_iter)

@@ -1,3 +1,4 @@
+from dataset import DisentanglementDataset
 from solvers.vae import VAESolver
 from typing import Optional
 from models import SoftIntroVAE
@@ -13,7 +14,9 @@ from torch.utils.tensorboard import SummaryWriter
 class TCVAESovler(VAESolver):
     def __init__(
         self,
+        dataset: DisentanglementDataset,
         model: SoftIntroVAE,
+        batch_size: int,
         optimizer_e: Optimizer,
         optimizer_d: Optimizer,
         beta_kl: float,
@@ -25,7 +28,9 @@ class TCVAESovler(VAESolver):
         test_iter: int = 1000
     ):
         super().__init__(
+            dataset,
             model,
+            batch_size,
             optimizer_e,
             optimizer_d,
             beta_kl,
@@ -86,3 +91,4 @@ class TCVAESovler(VAESolver):
             ),
         )
         self._write_images_helper(real_batch, cur_iter)
+        self.write_disentanglemnt_scores(cur_iter)

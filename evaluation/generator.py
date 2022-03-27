@@ -60,7 +60,7 @@ class LatentGenerator:
         data_source: DisentanglementDataset,
         device: torch.device,
         seed: Optional[int] = None,
-    ) -> None:
+    ):
         self.data_source = data_source
         self.device = device
         self.latent_indices = self.data_source.latent_indices
@@ -133,8 +133,9 @@ class LatentGenerator:
         """Randomly samples a batch of observations from a batch of factors."""
         all_factors = self.sample_all_factors(factors)
         indices = self.feature_lookup[all_factors]
+        observations = torch.stack([self.data_source[i][0] for i in indices], 0)
         # TODO: return type?
-        return self.data_source[indices].to(self.device)
+        return observations.to(self.device)
 
     def sample(self, batch_size: int) -> Tuple[np.ndarray, Tensor]:
         factors = self.sample_factors_of_variation(batch_size)
