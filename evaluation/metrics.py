@@ -1,3 +1,4 @@
+from typing import Tuple
 from evaluation.generator import LatentGenerator
 from models import SoftIntroVAE
 from . import utils
@@ -66,3 +67,61 @@ def compute_bvae_score(
     if training:
         model.train()
     return bvae_score
+
+
+def compute_dci_score(
+    latent_generator: LatentGenerator,
+    model: SoftIntroVAE,
+    num_samples=10000,
+    batch_size=64,
+    params=None,
+) -> Tuple[float, float, float]:
+    """Disentanglement, Completeness, and Informativeness (DCI)
+    Section 2 of "A Framework for the Quantitative Evaluation of Disentangled
+    Representations" (https://openreview.net/pdf?id=By-7dz-AZ).
+    Let P be a (D, K) matrix where the each ij^th element denotes the
+    probability of latent variable c_i of dimension D being important for
+    predicting latent factor z_j of dim K. Let ro be a vector of length K
+    with a weighted average from each factor.
+    D = sum_i (ro_i * (1 - H(P_i)))
+    C = sum_j (ro_j * (1 - H(P_j)))
+    I = E(z_j, f_j(c)), i.e. the prediction error to predict z_j from c.
+    Parameters
+    ----------
+    latent_generator : LatentGenerator
+        Generator sample ground truth latent factors.
+    model : SoftIntroVAE
+        Encoder or representation function r(x) that takes in an input
+        observation and returns the latent representation.
+    num_samples : (default=10000)
+        Number of latent representations to generate.
+    batch_size : int (default=64)
+        Number of samples to generate per batch.
+    Returns
+    -------
+    dci_info_score : float
+        Informativeness score.
+    dci_comp_score : float
+        Completeness score.
+    dci_dis_score : float
+        Disentanglement score.
+    """
+    params = params or {}
+
+    x_train, y_train = utils.generate_factor_representations(
+        latent_generator,
+        model,
+        num_samples=num_samples,
+        batch_size=batch_size,
+    )
+    x_test, y_test = utils.generate_factor_representations(
+        latent_generator,
+        model,
+        num_samples=num_samples,
+        batch_size=batch_size,
+    )
+    _, test_error, P = utils.fit_info_clf(
+        x_train, y_train, x_test, y_test, params=params
+    )
+
+    return test_error, utils.compute_completeness(P), utils.compute_disentanglement(P)

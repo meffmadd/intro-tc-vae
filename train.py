@@ -26,7 +26,7 @@ from models import SoftIntroVAE
 
 matplotlib.use("Agg")
 
-
+# TODO: numpy docstring type
 def train_soft_intro_vae(
     solver_type="vae",
     dataset="cifar10",

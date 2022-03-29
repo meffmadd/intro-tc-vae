@@ -8,9 +8,7 @@ import math
 
 
 def gaussian_log_density(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
-    """
-    Computes the log density of a Gaussian. This is just the simplified log of the PDF of a normal distribution.
-    """
+    """Computes the log density of a Gaussian. This is just the simplified log of the PDF of a normal distribution."""
     log2pi = torch.log(Tensor([2.0 * math.pi])).to(x.device)
     inv_var = torch.exp(-logvar)
     delta = x - mu
@@ -22,10 +20,20 @@ def batch_gaussian_density(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
     Takes in a 2D matrices of shape (batch_size, latent_dim) and returns a
     3D matrix of shape (batch_size, batch_size, latent_dim).
     Parameters
-    :param x: Reparameterized latent representation of shape (batch_size, latent_dim)
-    :param mu: Mean latent tensor of shape (batch_size, latent_dim)
-    :param logvar: Log variance latent tensor of shape (batch_size, latent_dim)
-    :return: Gaussian log density matrix between each sample of shape (batch_size, batch_size, latent_dim)
+
+    Parameters
+    ----------
+    x : Tensor
+        Reparameterized latent representation of shape (batch_size, latent_dim)
+    mu : Tensor
+        Mean latent tensor of shape (batch_size, latent_dim)
+    logvar : Tensor
+        Log variance latent tensor of shape (batch_size, latent_dim)
+
+    Returns
+    -------
+    Tensor
+        Gaussian log density matrix between each sample of shape (batch_size, batch_size, latent_dim)
     """
     batch_log_qz = gaussian_log_density(
         x=torch.unsqueeze(x, 1),
@@ -73,29 +81,41 @@ def log_pz(x: Tensor) -> Tensor:
     )
     return log_pz
 
+
 def on_off_diag(x: Tensor):
     """Computes the on and off diagonal of a tensor."""
     diag = torch.diagonal(x)
     off_diag = x - torch.diag_embed(x)
     return diag, off_diag
 
-def _entropy(x: np.ndarray, base=None, axis=0, eps=1e-12):
+
+def entropy(x: np.ndarray, base=None, axis=0, eps=1e-12):
     """Calculates entropy for a sequence of classes or probabilities."""
     if not isinstance(x, np.ndarray):
         raise TypeError("Input x has to be a numpy.ndarray object!")
     p = (x + eps) / np.sum(x + eps, axis=axis, keepdims=True)
-    H = - np.sum(p * np.log(p + eps), axis=axis)
+    H = -np.sum(p * np.log(p + eps), axis=axis)
     if base is not None:
         H /= np.log(base + eps)
     return H
 
+
 def kl_divergence(logvar: Tensor, mu: Tensor, reduce="sum") -> Tensor:
-    """
-    Calculate kl-divergence
-    :param logvar: log-variance from the encoder
-    :param mu: mean from the encoder
-    :param reduce: type of reduce: 'sum', 'none'
-    :return: kld
+    """Calculate kl-divergence
+
+    Parameters
+    ----------
+    logvar : Tensor
+        log-variance from the encoder
+    mu : Tensor
+        mean from the encoder
+    reduce : str, optional
+        type of reduce: 'sum', 'none'
+
+    Returns
+    -------
+    Tensor
+        KL-Divergence
     """
     kl = kl_no_reduce(logvar, mu)
     if reduce == "sum":
@@ -113,12 +133,20 @@ def kl_no_reduce(logvar: Tensor, mu: Tensor) -> Tensor:
 
 @torch.jit.script
 def reparameterize(mu: Tensor, logvar: Tensor) -> Tensor:
-    """
-    This function applies the reparameterization trick:
+    """This function applies the reparameterization trick:
     z = mu(X) + sigma(X)^0.5 * epsilon, where epsilon ~ N(0,I)
-    :param mu: mean of x
-    :param logvar: log variance of x
-    :return z: the sampled latent variable
+
+    Parameters
+    ----------
+    mu : Tensor
+        mean of x
+    logvar : Tensor
+        log variance of x
+
+    Returns
+    -------
+    Tensor
+        the sampled latent variable
     """
     device = mu.device
     std = torch.exp(0.5 * logvar)
@@ -127,13 +155,30 @@ def reparameterize(mu: Tensor, logvar: Tensor) -> Tensor:
 
 
 def reconstruction_loss(x, recon_x, loss_type="mse", reduction="sum") -> Tensor:
-    """
+    """Computes the reconstruction loss based on the loss type provided (default MSE)
 
-    :param x: original inputs
-    :param recon_x:  reconstruction of the VAE's input
-    :param loss_type: "mse", "l1", "bce"
-    :param reduction: "sum", "mean", "none"
-    :return: recon_loss
+    Parameters
+    ----------
+    x : _type_
+        original inputs
+    recon_x : _type_
+        reconstruction of the VAE's input
+    loss_type : str, optional
+        "mse", "l1", "bce", by default "mse"
+    reduction : str, optional
+        "sum", "mean", "none", by default "sum"
+
+    Returns
+    -------
+    Tensor
+        _description_
+
+    Raises
+    ------
+    NotImplementedError
+        _description_
+    NotImplementedError
+        _description_
     """
     if reduction not in ["sum", "mean", "none"]:
         raise NotImplementedError

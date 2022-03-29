@@ -3,23 +3,12 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from xgboost import XGBClassifier
 import torch
-from dataset import DisentanglementDataset
 from evaluation.generator import LatentGenerator
 from models import SoftIntroVAE
-
-
-DATASET_TO_LATENT_INDICES = {
-    "dsprites": [1, 2, 3, 4, 5],
-    "cars": [0, 1, 2],
-    "dummy": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-}
-
-DATASET_TO_FACTOR_SIZES = {
-    "dsprites": [1, 3, 6, 40, 32, 32],
-    "cars": [4, 24, 183],
-    "dummy": [1] * 10,
-}
+import ops
 
 
 def generate_factor_representations(
@@ -27,7 +16,7 @@ def generate_factor_representations(
     model: SoftIntroVAE,
     num_samples: int,
     batch_size: int,
-) -> Tuple[torch.Tensor, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray]:
     """Randomly samples a set of observations (images) then returns
     their modeled latent representation and the ground truth latent factors
     they were generated from.
@@ -45,7 +34,7 @@ def generate_factor_representations(
         Number of samples to generate per batch.
     Returns
     -------
-    representations : torch.Tensor
+    representations : np.ndarray
         A (num_samples, latent_dim) size matrix where each row is the
         latent representation of a randomly sampled observation.
     factors : np.ndarray
@@ -59,16 +48,18 @@ def generate_factor_representations(
         num_samples, batch_size, drop_last=False
     ):
         factors.append(factors_batch)
-        _, _, _, rec = model(observations_batch)
-        representations.append(rec)
+        with torch.no_grad():
+            z, _ = model.encode(observations_batch)
+            z = z.cpu().numpy()
+        representations.append(z)
 
-    return torch.vstack(representations), np.vstack(factors)
+    return np.vstack(representations), np.vstack(factors)
 
 
 # beta-vae
 def generate_factor_change_batch(
     latent_generator: LatentGenerator, model: SoftIntroVAE, batch_size: int
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, int]:
     """Generates a single input (z_diff) and label (y) for a batch using the
     factor change algo described in A.4 of
     https://openreview.net/references/pdf?id=Sy2fzU9gl.
@@ -162,18 +153,16 @@ def generate_factor_change(
     return np.array(Z_diff, dtype=np.float32), np.array(y, dtype=np.int8)
 
 
-def compute_factor_change_accuracy(x_train,
-                                   y_train,
-                                   x_test,
-                                   y_test,
-                                   params=None) -> float:
+def compute_factor_change_accuracy(
+    x_train, y_train, x_test, y_test, params=None
+) -> float:
     """
     Calculates the factor change classification score proposed in
     https://openreview.net/references/pdf?id=Sy2fzU9gl.
     """
     params = params or {}
-    lr_params = params.get('bvae_lr_params', {})
-    if params.get('scale'):
+    lr_params = params.get("bvae_lr_params", {})
+    if params.get("scale"):
         scl = StandardScaler()
         x_train = scl.fit_transform(x_train)
         x_test = scl.transform(x_test)
@@ -183,3 +172,67 @@ def compute_factor_change_accuracy(x_train,
 
     bvae_score: float = accuracy_score(y_test, clf.predict(x_test), normalize=True)
     return bvae_score
+
+
+# DCI utils
+def fit_info_clf(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_test: np.ndarray,
+    y_test: np.ndarray,
+    params=None,
+) -> Tuple[float, float, np.ndarray]:
+    """
+    Computes the informativeness score discussed on section 2 of
+    https://openreview.net/pdf?id=By-7dz-AZ.
+    """
+    params = params or {}
+    if params.get("informativeness_method") == "rf":
+        estimator = RandomForestClassifier
+    elif params.get("informativeness_method") == "xgb":
+        estimator = XGBClassifier
+    else:
+        estimator = GradientBoostingClassifier
+    estimator_params = params.get("informativeness_params", {})
+
+    K = y_train.shape[1]
+    feature_importances = []
+    train_errors = []
+    test_errors = []
+
+    for i in range(K):
+        y_train_i = y_train[:, i]
+        y_test_i = y_test[:, i]
+
+        clf = estimator(**estimator_params)
+        clf.fit(x_train, y_train_i)
+
+        train_errors.append(accuracy_score(y_train_i, clf.predict(x_train)))
+        test_errors.append(accuracy_score(y_test_i, clf.predict(x_test)))
+        feature_importances.append(np.abs(clf.feature_importances_))
+
+    return np.mean(train_errors), np.mean(test_errors), np.array(feature_importances)
+
+
+def compute_disentanglement(P: np.ndarray) -> float:
+    """
+    Computes the disentanlement score discussed on section 2 of
+    https://openreview.net/pdf?id=By-7dz-AZ.
+    """
+    D = 1. - ops.entropy(P, base=P.shape[0])
+    if np.sum(P) == 0:
+        P = np.ones_like(P)
+    ro = np.sum(P, axis=0) / P.sum()
+    return np.sum(ro * D)
+
+
+def compute_completeness(P: np.ndarray) -> float:
+    """
+    Computes the completeness score discussed on section 2 of
+    https://openreview.net/pdf?id=By-7dz-AZ.
+    """
+    C = 1. - ops.entropy(P.T, base=P.shape[1])
+    if np.sum(P) == 0:
+        P = np.ones_like(P)
+    ro = np.sum(P, axis=1) / P.sum()
+    return np.sum(ro * C)
