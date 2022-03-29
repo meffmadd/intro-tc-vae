@@ -3,10 +3,10 @@ from typing import Optional, Tuple
 from dataset import DisentanglementDataset
 from evaluation.generator import LatentGenerator
 from evaluation.metrics import (
-    compute_bvae_score,
-    compute_dci_score,
-    compute_mig_score,
-    compute_mod_explicit_score,
+    write_bvae_score,
+    write_dci_score,
+    write_mig_score,
+    write_mod_expl_score,
 )
 from models import SoftIntroVAE
 import torch
@@ -130,48 +130,13 @@ class VAESolver:
             and isinstance(self.dataset, DisentanglementDataset)
             and cur_iter % self.test_iter == 0
         ):
-            bvae_score = compute_bvae_score(
-                self.latent_generator,
-                self.model,
-                num_samples=num_samples,
-                batch_size=self.batch_size,
-                params=dict(scale=True),
-            )
-            self.writer.add_scalar("bvae_score", bvae_score, global_step=cur_iter)
-
-            # dci_info_score, dci_comp_score, dci_dis_score = compute_dci_score(
-            #     self.latent_generator,
-            #     self.model,
-            #     num_samples=num_samples,
-            #     batch_size=self.batch_size,
-            #     params=dict(informativeness_method="xgb", informativeness_params={"n_jobs": -1}),
-            # )
-            # self.writer.add_scalars(
-            #     "dci",
-            #     dict(
-            #         dci_info_score=dci_info_score,
-            #         dci_comp_score=dci_comp_score,
-            #         dci_dis_score=dci_dis_score,
-            #     ), global_step=cur_iter
-            # )
-            mig_score = compute_mig_score(
-                self.latent_generator,
-                self.model,
+            score_kwargs = dict(
+                latent_generator=self.latent_generator,
+                model=self.model,
                 num_samples=num_samples,
                 batch_size=self.batch_size,
             )
-            self.writer.add_scalar("mig_score", mig_score, global_step=cur_iter)
-
-            modularity_score, explicitness_score = compute_mod_explicit_score(
-                self.latent_generator,
-                self.model,
-                num_samples=num_samples,
-                batch_size=self.batch_size,
-            )
-            self.writer.add_scalars(
-                "mod_exp",
-                dict(
-                    modularity_score=modularity_score,
-                    explicitness_score=explicitness_score,
-                ), global_step=cur_iter
-            )
+            write_bvae_score(self.writer, cur_iter, **score_kwargs)
+            write_dci_score(self.writer, cur_iter, **score_kwargs)
+            write_mig_score(self.writer, cur_iter, **score_kwargs)
+            write_mod_expl_score(self.writer, cur_iter, **score_kwargs)

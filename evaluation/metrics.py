@@ -5,6 +5,15 @@ from sklearn.preprocessing import StandardScaler
 from evaluation.generator import LatentGenerator
 from models import SoftIntroVAE
 from . import utils
+from torch.utils.tensorboard import SummaryWriter
+
+
+def write_bvae_score(writer: SummaryWriter, cur_iter: int, **score_kwargs):
+    bvae_score = compute_bvae_score(
+        **score_kwargs,
+        params=dict(scale=True),
+    )
+    writer.add_scalar("bvae_score", bvae_score, global_step=cur_iter)
 
 
 def compute_bvae_score(
@@ -72,6 +81,24 @@ def compute_bvae_score(
     return bvae_score
 
 
+def write_dci_score(writer: SummaryWriter, cur_iter: int, **score_kwargs):
+    dci_info_score, dci_comp_score, dci_dis_score = compute_dci_score(
+        **score_kwargs,
+        params=dict(
+            informativeness_method="xgb", informativeness_params={"n_jobs": -1}
+        ),
+    )
+    writer.add_scalars(
+        "dci",
+        dict(
+            dci_info_score=dci_info_score,
+            dci_comp_score=dci_comp_score,
+            dci_dis_score=dci_dis_score,
+        ),
+        global_step=cur_iter,
+    )
+
+
 def compute_dci_score(
     latent_generator: LatentGenerator,
     model: SoftIntroVAE,
@@ -130,6 +157,11 @@ def compute_dci_score(
     return test_error, utils.compute_completeness(P), utils.compute_disentanglement(P)
 
 
+def write_mig_score(writer: SummaryWriter, cur_iter: int, **score_kwargs):
+    mig_score = compute_mig_score(**score_kwargs)
+    writer.add_scalar("mig_score", mig_score, global_step=cur_iter)
+
+
 def compute_mig_score(
     latent_generator: LatentGenerator,
     model: SoftIntroVAE,
@@ -183,7 +215,19 @@ def compute_mig_score(
     return np.mean((I_sorted[0] - I_sorted[1]) / H)
 
 
-def compute_mod_explicit_score(
+def write_mod_expl_score(writer: SummaryWriter, cur_iter: int, **score_kwargs):
+    modularity_score, explicitness_score = compute_mod_expl_score(**score_kwargs)
+    writer.add_scalars(
+        "mod_expl",
+        dict(
+            modularity_score=modularity_score,
+            explicitness_score=explicitness_score,
+        ),
+        global_step=cur_iter,
+    )
+
+
+def compute_mod_expl_score(
     latent_generator: LatentGenerator,
     model: SoftIntroVAE,
     num_samples=10000,

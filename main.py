@@ -128,7 +128,7 @@ if __name__ == "__main__":
         lr_d=args.lr,
         pretrained=pretrained,
         seed=args.seed,
-        test_iter=1000,
+        test_iter=3000,
         use_tensorboard=args.tensorboard,
         use_amp=args.amp,
     )
