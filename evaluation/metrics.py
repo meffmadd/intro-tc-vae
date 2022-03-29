@@ -1,4 +1,6 @@
 from typing import Tuple
+
+import numpy as np
 from evaluation.generator import LatentGenerator
 from models import SoftIntroVAE
 from . import utils
@@ -125,3 +127,54 @@ def compute_dci_score(
     )
 
     return test_error, utils.compute_completeness(P), utils.compute_disentanglement(P)
+
+
+def compute_mig_score(latent_generator: LatentGenerator,
+                      model: SoftIntroVAE,
+                      num_samples=10000,
+                      batch_size=64,
+                      params=None):
+    """Mutual Information Gap (MIG)
+    Equation 6 (section 4.1) of "Isolating Sources of Disentanglement in
+    Variational Autoencoders" (https://arxiv.org/pdf/1802.04942.pdf).
+    Let z_j denote the jth latent variable, v_j the jth ground truth latent
+    factor, and K the number of ground truth factors.
+    MIG = 1/K * sum_k (1 / H(v_k)) * (argmax_jk( I(z_jk ; v_k) ) - argmax_j( I(z_j ; v_k)) )
+    Where argmax_jk( I(z_jk ; v_k) ) denotes is the highest mutual
+    information (MI) between the jk^th latent and k^th factor.
+    argmax_j( I(z_j ; v_k) ) denotes the 2nd highest MI between the jth latent
+    and kth factor.
+    Parameters
+    ----------
+    latent_generator : LatentGenerator
+        Generator sample ground truth latent factors.
+    model : SoftIntroVAE
+        Encoder or representation function r(x) that takes in an input
+        observation and returns the latent representation.
+    num_samples : (default=10000)
+        Number of latent representations to generate.
+    batch_size : int (default=64)
+        Number of samples to generate per batch.
+    params : dict (default=None)
+        bins : Discrete number of bins to encode each latent variable.
+    Returns
+    -------
+    mig_score : float
+        Mutual Information Gap score.
+    """
+    params = params or {}
+    bins = params.get('bins', 10)
+
+    z, v = utils.generate_factor_representations(
+        latent_generator,
+        model,
+        num_samples=num_samples,
+        batch_size=batch_size,
+    )
+    z_binned = utils.descretize(z, bins=bins)
+
+    H = utils.calculate_entropy(v)
+    I = utils.calculate_mutual_info(z_binned, v)
+    I_sorted = np.sort(I, axis=0)[::-1]
+
+    return np.mean( ( I_sorted[0] - I_sorted[1] ) / H )

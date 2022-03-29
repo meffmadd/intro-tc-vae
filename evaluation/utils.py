@@ -1,7 +1,7 @@
 from typing import Tuple
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, mutual_info_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from xgboost import XGBClassifier
@@ -236,3 +236,35 @@ def compute_completeness(P: np.ndarray) -> float:
         P = np.ones_like(P)
     ro = np.sum(P, axis=1) / P.sum()
     return np.sum(ro * C)
+
+
+# MIG utils
+def descretize(x, bins):
+    """Descretizes each column of x using a histogram function."""
+    if len(x.shape) == 1:
+        x = np.expand_dims(x, axis=0)
+    descretized = np.zeros(x.shape)
+    for i in range(x.shape[1]):
+        _, bin_edges = np.histogram(x[:, i], bins)
+        descretized[:, i] = np.digitize(x[:, i], bin_edges[:-1])
+    return descretized
+
+
+def calculate_mutual_info(z, v):
+    """Calcultes the mutual information between each latent z and factor v."""
+    n = z.shape[1]
+    d = v.shape[1]
+    MI = np.zeros([n, d])
+    for i in range(n):
+        for j in range(d):
+            MI[i, j] = mutual_info_score(z[:, i], v[:, j])
+    return MI
+
+
+def calculate_entropy(v):
+    """Calculates the entropy of each column (factor) of a matrix v."""
+    d = v.shape[1]
+    H = np.zeros(d)
+    for j in range(d):
+        H[j] = ops.entropy(v[:, j])
+    return H
