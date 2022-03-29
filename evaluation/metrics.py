@@ -45,6 +45,8 @@ def compute_bvae_score(
     bvae_score : float
         beta-VAE disentanglement score.
     """
+    if training := model.training:
+        model.eval()
     Z_diff_train, y_train = utils.generate_factor_change(
         latent_generator,
         model,
@@ -61,4 +63,6 @@ def compute_bvae_score(
     bvae_score = utils.compute_factor_change_accuracy(
         Z_diff_train, y_train, Z_diff_test, y_test, params=params
     )
+    if training:
+        model.train()
     return bvae_score

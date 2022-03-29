@@ -105,11 +105,12 @@ def generate_factor_change_batch(
 
     # z_li = mu(x_li), z_lj = mu(x_lj)
     # real_mu, real_logvar, z, rec
-    z_mean_li, _ = model.encode(x_li)
-    z_mean_lj, _ = model.encode(x_lj)
+    with torch.no_grad():
+        z_mean_li, _ = model.encode(x_li)
+        z_mean_lj, _ = model.encode(x_lj)
 
-    z_mean_li: np.ndarray = z_mean_li.cpu().detach().numpy()
-    z_mean_lj: np.ndarray = z_mean_lj.cpu().detach().numpy()
+    z_mean_li: np.ndarray = z_mean_li.cpu().numpy()
+    z_mean_lj: np.ndarray = z_mean_lj.cpu().numpy()
 
     # z_diff = 1/L * sum_l (|z_li - z_lj|)
     z_mean_li = z_mean_li.reshape(batch_size, -1)
