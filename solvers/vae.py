@@ -2,7 +2,12 @@ from contextlib import nullcontext
 from typing import Optional, Tuple
 from dataset import DisentanglementDataset
 from evaluation.generator import LatentGenerator
-from evaluation.metrics import compute_bvae_score, compute_dci_score, compute_mig_score
+from evaluation.metrics import (
+    compute_bvae_score,
+    compute_dci_score,
+    compute_mig_score,
+    compute_mod_explicit_score,
+)
 from models import SoftIntroVAE
 import torch
 from torch.optim import Optimizer
@@ -156,3 +161,17 @@ class VAESolver:
                 batch_size=self.batch_size,
             )
             self.writer.add_scalar("mig_score", mig_score, global_step=cur_iter)
+
+            modularity_score, explicitness_score = compute_mod_explicit_score(
+                self.latent_generator,
+                self.model,
+                num_samples=num_samples,
+                batch_size=self.batch_size,
+            )
+            self.writer.add_scalars(
+                "mod_exp",
+                dict(
+                    modularity_score=modularity_score,
+                    explicitness_score=explicitness_score,
+                ), global_step=cur_iter
+            )

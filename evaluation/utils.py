@@ -1,8 +1,8 @@
 from typing import Tuple
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, mutual_info_score
-from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, mutual_info_score, roc_auc_score
+from sklearn.preprocessing import MultiLabelBinarizer, StandardScaler
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from xgboost import XGBClassifier
 import torch
@@ -219,7 +219,7 @@ def compute_disentanglement(P: np.ndarray) -> float:
     Computes the disentanlement score discussed on section 2 of
     https://openreview.net/pdf?id=By-7dz-AZ.
     """
-    D = 1. - ops.entropy(P, base=P.shape[0])
+    D = 1.0 - ops.entropy(P, base=P.shape[0])
     if np.sum(P) == 0:
         P = np.ones_like(P)
     ro = np.sum(P, axis=0) / P.sum()
@@ -231,7 +231,7 @@ def compute_completeness(P: np.ndarray) -> float:
     Computes the completeness score discussed on section 2 of
     https://openreview.net/pdf?id=By-7dz-AZ.
     """
-    C = 1. - ops.entropy(P.T, base=P.shape[1])
+    C = 1.0 - ops.entropy(P.T, base=P.shape[1])
     if np.sum(P) == 0:
         P = np.ones_like(P)
     ro = np.sum(P, axis=1) / P.sum()
@@ -268,3 +268,65 @@ def calculate_entropy(v):
     for j in range(d):
         H[j] = ops.entropy(v[:, j])
     return H
+
+
+# Modular & Explicitness utils
+def get_valid_indices(y_train, y_test):
+    """Mask values of y_train and y_test that are not contained in both y_train and y_test."""
+    labels = np.array(list(set(y_train) & set(y_test)))
+    train_idx = list(map(lambda x: x in labels, y_train))
+    test_idx = list(map(lambda x: x in labels, y_test))
+    return train_idx, test_idx
+
+
+def compute_explicitness(x_train, y_train, x_test, y_test, params=None):
+    """
+    Computes the explicitness shown in section 3
+    of https://arxiv.org/pdf/1802.05312.pdf.
+    """
+    params = params or {}
+    lr_params = params.get("explicitness_lr_params", {})
+
+    num_factors = y_train.shape[1]
+
+    train_aucs = []
+    test_aucs = []
+    # may want to test splitting ever level into a binary logistic
+    for i in range(num_factors):
+        y_train_i = y_train[:, i].astype(int)
+        y_test_i = y_test[:, i].astype(int)
+
+        train_idx, test_idx = get_valid_indices(y_train_i, y_test_i)
+        x_train_i, y_train_i = x_train[train_idx, :], y_train_i[train_idx]
+        x_test_i, y_test_i = x_test[test_idx, :], y_test_i[test_idx]
+
+        clf = LogisticRegression(**lr_params)
+        clf.fit(x_train_i, y_train_i)
+
+        y_pred = clf.predict_proba(x_train_i)
+        y_pred_test = clf.predict_proba(x_test_i)
+
+        # one-hot encoding to calculate AUC with output of predict_proba (prob. for each class)
+        mlb = MultiLabelBinarizer()
+        y_train_enc = mlb.fit_transform(y_train_i.reshape(-1, 1))
+        y_test_enc = mlb.transform(y_test_i.reshape(-1, 1))
+
+        train_aucs.append(roc_auc_score(y_train_enc, y_pred))
+        test_aucs.append(roc_auc_score(y_test_enc, y_pred_test))
+
+    return np.mean(train_aucs), np.mean(test_aucs)
+
+
+def compute_modularity(mi):
+    """
+    Computes the modularity score given a mutual information matrix shown in
+    section 3 using equation 2 of https://arxiv.org/pdf/1802.05312.pdf.
+    """
+    num_latents = mi.shape[0]
+    N = mi.shape[1]
+    template = np.zeros_like(mi)
+    max_mi_idx = np.argmax(mi, axis=1)
+    thetas = np.max(mi, axis=1)
+    template[range(num_latents), max_mi_idx] = thetas
+    deltas = np.sum((mi - template) ** 2, axis=1) / (thetas**2 * (N - 1))
+    return np.mean(1 - deltas)
