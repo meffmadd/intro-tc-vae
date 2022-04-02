@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 import torch
 import torch.utils.data as data
 import numpy as np
@@ -20,20 +20,68 @@ class DisentanglementDataset(data.Dataset):
     def factor_sizes(self) -> List[int]:
         raise NotImplementedError()
 
+# TODO: Test dataset
+class MPI3D(DisentanglementDataset):
+    def __init__(self, arr, resize: int = 64) -> None:
+        self.imgs = arr['images'] * 255
+        self.latents_values = np.arange(self.imgs.shape[0])
+        self.factor_bases = np.divide(
+            np.prod(self.factor_sizes), np.cumprod(self.factor_sizes)
+        ).astype(int)
+        self.resize = resize
+        self.input_transform = transforms.Compose([transforms.ToTensor()])
+    
+    @classmethod
+    def load_data(cls, resize: int = 64) -> "DisentanglementDataset":
+        data_dir = os.path.expanduser("~/mpi3d-dataset")
+        data_path = os.path.join(data_dir, "mpi3d_toy.npz")
+        arr = np.load(data_path)
+        return MPI3D(arr, resize=resize)
+    
+    def _index_to_factor(self, idx: int) -> np.ndarray:
+        """Get factor array from index
+
+        Parameters
+        ----------
+        idx : int
+            Index to convert
+
+        Returns
+        -------
+        np.ndarray
+            Factor index array of shape (7,)
+        """
+        bucket_pos = np.floor_divide(idx, self.factor_bases)
+        return np.mod(bucket_pos, self.factor_sizes)
+
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, np.ndarray]:
+        img = Image.fromarray(self.imgs[index])
+        label = self._index_to_factor(self.latents_values[index])
+        if self.resize != 64:
+            img = img.resize((self.resize, self.resize), Image.BICUBIC)
+        img = self.input_transform(img)
+        return img, label 
+    
+    @property
+    def latent_indices(self) -> List[int]:
+        return [0, 1, 2, 3, 4, 5, 6]
+    
+    @property
+    def factor_sizes(self) -> List[int]:
+        return [6,6,2,3,3,40,40]
 
 
 class DSprites(DisentanglementDataset):
     def __init__(self, arr, resize: int = 64) -> None:
         self.imgs = arr['imgs'] * 255
         self.latents_values = arr['latents_values']
-        self.latents_classes = arr['latents_classes']
         self.resize = resize
         self.input_transform = transforms.Compose([transforms.ToTensor()])
     
     def __len__(self):
         return len(self.imgs)
     
-    def __getitem__(self, index: int):
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, np.ndarray]:
         img = Image.fromarray(self.imgs[index])
         label = self.latents_values[index]
         if self.resize != 64:
@@ -55,6 +103,10 @@ class DSprites(DisentanglementDataset):
         data_path = os.path.join(data_dir, "dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz")
         arr = np.load(data_path)
         return DSprites(arr, resize=resize)
+
+
+if __name__ == "__main__":
+    MPI3D.load_data()
 
 class UkiyoE(data.Dataset):
     def __init__(self, root, df, category, resize=256):
