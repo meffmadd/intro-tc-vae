@@ -216,7 +216,7 @@ def compute_mig_score(
 
 
 def write_mod_expl_score(writer: SummaryWriter, cur_iter: int, **score_kwargs):
-    modularity_score, explicitness_score = compute_mod_expl_score(**score_kwargs)
+    modularity_score, explicitness_score = compute_mod_expl_score(**score_kwargs, params=dict(explicitness_lr_params={"solver": "saga", "max_iter": 300}))
     writer.add_scalars(
         "mod_expl",
         dict(

@@ -136,7 +136,9 @@ class VAESolver:
                 num_samples=num_samples,
                 batch_size=self.batch_size,
             )
+            print("Calculating disentanglment scores...")
             write_bvae_score(self.writer, cur_iter, **score_kwargs)
-            write_dci_score(self.writer, cur_iter, **score_kwargs)
+            # write_dci_score(self.writer, cur_iter, **score_kwargs)
             write_mig_score(self.writer, cur_iter, **score_kwargs)
             write_mod_expl_score(self.writer, cur_iter, **score_kwargs)
+            print("Finished calculating disentanglemnt scores!")
