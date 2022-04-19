@@ -74,7 +74,7 @@ class IntroSolver(VAESolver):
                 real_batch, rec, loss_type=self.recon_loss_type, reduction="mean"
             )
 
-            lossE_real_kl = kl_divergence(real_logvar, real_mu, reduce="mean")
+            lossE_real_kl = self.compute_kl_loss(z, real_mu, real_logvar)
 
             rec_mu, rec_logvar, z_rec, rec_rec = self.model(rec.detach())
             fake_mu, fake_logvar, z_fake, rec_fake = self.model(fake.detach())
@@ -163,8 +163,8 @@ class IntroSolver(VAESolver):
                 reduction="mean",
             )
 
-            lossD_rec_kl = kl_divergence(rec_logvar, rec_mu, reduce="mean")
-            lossD_fake_kl = kl_divergence(fake_logvar, fake_mu, reduce="mean")
+            lossD_rec_kl = self.compute_kl_loss(z_rec, rec_mu, rec_logvar)
+            lossD_fake_kl = self.compute_kl_loss(z_fake, fake_mu, fake_logvar)
 
             lossD = self.scale * (
                 loss_rec * self.beta_rec

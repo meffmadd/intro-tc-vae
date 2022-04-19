@@ -11,7 +11,7 @@ from torch import Tensor
 from torch.cuda.amp.grad_scaler import GradScaler
 from torch.utils.tensorboard import SummaryWriter
 
-class TCVAESovler(VAESolver):
+class TCSovler(VAESolver):
     def __init__(
         self,
         dataset: DisentanglementDataset,
@@ -42,6 +42,21 @@ class TCVAESovler(VAESolver):
             test_iter
         )
     
+    def compute_kl_loss(self, z: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
+            # instead of loss_kl we take the decomposed term (Equation 2)
+            logqz_condx = log_qz_cond_x(z, mu, logvar)
+            logpz = log_pz(z)
+            # with minibatch weighted sampling:
+            logqz_prodmarginals = log_prod_qz_i(z, mu, logvar)
+            logqz = log_qz(z, mu, logvar)
+
+            mi_loss = torch.mean(logqz_condx - logqz)
+            tc_loss = torch.mean(logqz - logqz_prodmarginals)
+            kl_loss = torch.mean(logqz_prodmarginals - logpz)
+
+            # recombine to get loss:
+            return mi_loss + self.beta_kl * tc_loss + kl_loss
+    
     def train_step(self, batch: Tensor, cur_iter: int) -> None:
         if len(batch.size()) == 3:
             batch = batch.unsqueeze(0)
@@ -55,20 +70,8 @@ class TCVAESovler(VAESolver):
             loss_rec = reconstruction_loss(
                 real_batch, rec, loss_type=self.recon_loss_type, reduction="mean"
             )
-            # instead of loss_kl we take the decomposed term (Equation 2)
-            logqz_condx = log_qz_cond_x(z, real_mu, real_logvar)
-            logpz = log_pz(z)
-            # with minibatch weighted sampling:
-            logqz_prodmarginals = log_prod_qz_i(z, real_mu, real_logvar)
-            logqz = log_qz(z, real_mu, real_logvar)
 
-            mi_loss = torch.mean(logqz_condx - logqz)
-            tc_loss = torch.mean(logqz - logqz_prodmarginals)
-            kl_loss = torch.mean(logqz_prodmarginals - logpz)
-
-            # recombine to get loss:
-            loss_kl = mi_loss + self.beta_kl * tc_loss + kl_loss
-
+            loss_kl = self.compute_kl_loss(z, real_mu, real_logvar)
             loss = self.beta_rec * loss_rec + self.beta_kl * loss_kl
 
         self.optimizer_d.zero_grad()

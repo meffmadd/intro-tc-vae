@@ -50,6 +50,9 @@ class VAESolver:
         self.test_iter = test_iter
 
         self.recon_loss_type = "mse"
+    
+    def compute_kl_loss(self, z: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
+        return kl_divergence(logvar, mu, reduce="mean")
 
     def train_step(self, batch: Tensor, cur_iter: int) -> None:
         if len(batch.size()) == 3:
@@ -64,7 +67,7 @@ class VAESolver:
             loss_rec = reconstruction_loss(
                 real_batch, rec, loss_type=self.recon_loss_type, reduction="mean"
             )
-            loss_kl = kl_divergence(real_logvar, real_mu, reduce="mean")
+            loss_kl = self.compute_kl_loss(None, real_mu, real_logvar)
 
             loss = self.beta_rec * loss_rec + self.beta_kl * loss_kl
 

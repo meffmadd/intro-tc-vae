@@ -19,7 +19,8 @@ import matplotlib.pyplot as plt
 import matplotlib
 from contextlib import nullcontext
 from solvers import VAESolver, IntroSolver
-from solvers.tc import TCVAESovler
+from solvers.intro_tc import IntroTCSovler
+from solvers.tc import TCSovler
 
 from utils import *
 from models import SoftIntroVAE
@@ -187,11 +188,11 @@ def train_soft_intro_vae(
     elif solver_type == "intro":
         solver = IntroSolver(**solver_kwargs, beta_neg=beta_neg)
     elif solver_type == "tc":
-        solver = TCVAESovler(**solver_kwargs)
+        solver = TCSovler(**solver_kwargs)
     elif solver_type == "intro-tc":
-        raise NotImplementedError()
+        solver = IntroTCSovler(**solver_kwargs, beta_neg=beta_neg)
     else:
-        raise ValueError(f"Solver {solver_type} not supported!")
+        raise ValueError(f"Solver '{solver_type}' not supported!")
 
     cur_iter = 0
     for epoch in range(start_epoch, num_epochs):
