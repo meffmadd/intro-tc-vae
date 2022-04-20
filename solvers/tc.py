@@ -87,11 +87,12 @@ class TCSovler(VAESolver):
             self.optimizer_e.step()
             self.optimizer_d.step()
 
-        self.write_scalars(
-            cur_iter,
-            losses=dict(
-                loss_rec=loss_rec.data.cpu().item(), loss_kl=loss_kl.data.cpu().item()
-            ),
-        )
-        self._write_images_helper(real_batch, cur_iter)
-        self.write_disentanglemnt_scores(cur_iter)
+        if self.writer:
+            self.write_scalars(
+                cur_iter,
+                losses=dict(
+                    loss_rec=loss_rec.data.cpu().item(), loss_kl=loss_kl.data.cpu().item()
+                ),
+            )
+            self._write_images_helper(real_batch, cur_iter)
+            self.write_disentanglemnt_scores(cur_iter)

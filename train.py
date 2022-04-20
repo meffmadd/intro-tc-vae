@@ -1,5 +1,6 @@
 # imports
 # torch and friends
+from config import Config
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
@@ -28,85 +29,45 @@ from models import SoftIntroVAE
 matplotlib.use("Agg")
 
 # TODO: numpy docstring type
-def train_soft_intro_vae(
-    solver_type="vae",
-    dataset="cifar10",
-    arch="res",
-    z_dim=128,
-    lr_e=2e-4,
-    lr_d=2e-4,
-    batch_size=128,
-    num_workers=4,
-    start_epoch=0,
-    exit_on_negative_diff=False,
-    num_epochs=250,
-    save_interval=50,
-    optimizer="adam",
-    beta_kl=1.0,
-    beta_rec=1.0,
-    beta_neg=1.0,
-    dropout=0.0,
-    test_iter=1000,
-    seed=-1,
-    pretrained=None,
-    device=torch.device("cpu"),
-    use_tensorboard=False,
-    use_amp=False,
-):
+def train_soft_intro_vae(config: Config):
     """
-    :param solver_type: the type of objective function to be optimized: ['vae','intro','tc','intro-tc']
-    :param dataset: dataset to train on: ['ukiyo_e256', 'ukiyo_e128', 'ukiyo_e64', 'cifar10']
-    :param arch: model architecture: ['conv', 'res', 'inception']
-    :param z_dim: number of latent dimensions
-    :param lr_e: learning rate for encoder
-    :param lr_d: learning rate for decoder
-    :param batch_size: batch size
-    :param num_workers: num workers for the loading the data
-    :param start_epoch: epoch to start from
-    :param exit_on_negative_diff: stop run if mean kl diff between fake and real is negative after 50 epochs
-    :param num_epochs: total number of epochs to run
-    :param save_interval: epochs between checkpoint saving
-    :param optimizer: the type of optimizer to use for training
-    :param beta_kl: beta coefficient for the kl divergence
-    :param beta_rec: beta coefficient for the reconstruction loss
-    :param beta_neg: beta coefficient for the kl divergence in the expELBO function
-    :param dropout: fraction to use for dropout (0.0 means no dropout)
-    :param test_iter: iterations between sample image saving
-    :param seed: seed
-    :param pretrained: path to pretrained model, to continue training
-    :param device: device to run calculation on - torch.device('cuda:x') or torch.device('cpu')
-    :param use_tensorboard: whether to write the model loss and output to be used for tensorboard
-    :param use_amp: whether to use automatic multi precision
+    :param config: Config for a run
     :return:
     """
-    if seed != -1:
-        random.seed(seed)
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        torch.cuda.manual_seed(seed)
+    if config.seed != -1:
+        random.seed(config.seed)
+        np.random.seed(config.seed)
+        torch.manual_seed(config.seed)
+        torch.cuda.manual_seed(config.seed)
         torch.backends.cudnn.deterministic = True
-        print("random seed: ", seed)
+        print("random seed: ", config.seed)
+
+    device = (
+        torch.device("cpu")
+        if config.device <= -1
+        else torch.device("cuda:" + str(config.device))
+    )
 
     # run cudnn benchmark for optimal convolution computation
     torch.backends.cudnn.benchmark = True
 
     # --------------build models -------------------------
-    if dataset == "ukiyo_e256":
+    if config.dataset == "ukiyo_e256":
         image_size = 256
         channels = [64, 128, 256, 512, 512, 512]
         train_set = UkiyoE.load_data()
         ch = 3
-    elif dataset == "ukiyo_e128":
+    elif config.dataset == "ukiyo_e128":
         image_size = 128
         channels = [64, 128, 256, 512, 512]
         train_set = UkiyoE.load_data(resize=image_size)
         ch = 3
-    elif dataset == "ukiyo_e64":
+    elif config.dataset == "ukiyo_e64":
         image_size = 64
         channels = [64, 128, 256, 512]
         train_set = UkiyoE.load_data(resize=image_size)
         ch = 3
-    elif dataset == "dsprites":
+    elif config.dataset == "dsprites":
         image_size = 64
         channels = [64, 128, 256, 512]
         train_set = DSprites.load_data()
@@ -116,34 +77,33 @@ def train_soft_intro_vae(
 
     writer = (
         SummaryWriter(
-            comment=f"_{dataset}_z{z_dim}_{beta_kl}_{beta_neg}_{beta_rec}_{arch}_{optimizer}"
+            comment=f"_{config.dataset}_z{config.z_dim}_{config.beta_kl}_{config.beta_neg}_{config.beta_rec}_{config.arch}_{config.optimizer}"
         )
-        if use_tensorboard
+        if config.use_tensorboard
         else None
     )
 
     model = SoftIntroVAE(
-        arch=arch,
+        arch=config.arch,
         cdim=ch,
-        zdim=z_dim,
+        zdim=config.z_dim,
         channels=channels,
         image_size=image_size,
-        dropout=dropout,
+        dropout=config.dropout,
     ).to(device)
-    if pretrained is not None:
-        load_model(model, pretrained, device)
     print(model)
 
-    if optimizer == "adam":
+    lr_e, lr_d = config.lr, config.lr
+    if config.optimizer == "adam":
         optimizer_e = optim.Adam(model.encoder.parameters(), lr=lr_e)
         optimizer_d = optim.Adam(model.decoder.parameters(), lr=lr_d)
-    elif optimizer == "adadelta":
+    elif config.optimizer == "adadelta":
         optimizer_e = optim.Adadelta(model.encoder.parameters(), lr=lr_e)
         optimizer_d = optim.Adadelta(model.decoder.parameters(), lr=lr_d)
-    elif optimizer == "adagrad":
+    elif config.optimizer == "adagrad":
         optimizer_e = optim.Adagrad(model.encoder.parameters(), lr=lr_e)
         optimizer_d = optim.Adagrad(model.decoder.parameters(), lr=lr_d)
-    elif optimizer == "RMSprop":
+    elif config.optimizer == "RMSprop":
         optimizer_e = optim.RMSprop(model.encoder.parameters(), lr=lr_e)
         optimizer_d = optim.RMSprop(model.decoder.parameters(), lr=lr_d)
     else:
@@ -158,9 +118,9 @@ def train_soft_intro_vae(
 
     train_data_loader = DataLoader(
         train_set,
-        batch_size=batch_size,
+        batch_size=config.batch_size,
         shuffle=True,
-        num_workers=num_workers,
+        num_workers=config.num_workers,
         pin_memory=True,
     )
 
@@ -169,65 +129,67 @@ def train_soft_intro_vae(
     solver_kwargs = dict(
         dataset=train_set,
         model=model,
-        batch_size=batch_size,
+        batch_size=config.batch_size,
         optimizer_e=optimizer_e,
         optimizer_d=optimizer_d,
-        beta_kl=beta_kl,
-        beta_rec=beta_rec,
+        beta_kl=config.beta_kl,
+        beta_rec=config.beta_rec,
         device=device,
-        use_amp=use_amp,
+        use_amp=config.use_amp,
         grad_scaler=grad_scaler,
         writer=writer,
-        test_iter=test_iter,
+        test_iter=config.test_iter,
     )
-    if solver_type == "vae":
+    if config.solver == "vae":
         solver = VAESolver(**solver_kwargs)
-    elif solver_type == "intro":
-        solver = IntroSolver(**solver_kwargs, beta_neg=beta_neg)
-    elif solver_type == "tc":
+    elif config.solver == "intro":
+        solver = IntroSolver(**solver_kwargs, beta_neg=config.beta_neg)
+    elif config.solver == "tc":
         solver = TCSovler(**solver_kwargs)
-    elif solver_type == "intro-tc":
-        solver = IntroTCSovler(**solver_kwargs, beta_neg=beta_neg)
+    elif config.solver == "intro-tc":
+        solver = IntroTCSovler(**solver_kwargs, beta_neg=config.beta_neg)
     else:
-        raise ValueError(f"Solver '{solver_type}' not supported!")
+        raise ValueError(f"Solver '{config.solver_type}' not supported!")
 
     cur_iter = 0
-    for epoch in range(start_epoch, num_epochs):
+    for epoch in range(config.start_epoch, config.num_epochs):
         # save models
-        if epoch % save_interval == 0 and epoch > 0:
-            save_epoch = (epoch // save_interval) * save_interval
-            prefix = f"{dataset}_{solver}_betas_{str(beta_kl)}_{str(beta_neg)}_{str(beta_rec)}_zdim_{z_dim}_{arch}_{optimizer}"
+        if epoch % config.save_interval == 0 and epoch > 0:
+            save_epoch = (epoch // config.save_interval) * config.save_interval
+            prefix = f"{config.dataset}_{solver}_betas_{str(config.beta_kl)}_{str(config.beta_neg)}_{str(config.beta_rec)}_zdim_{config.z_dim}_{config.arch}_{config.optimizer}"
             save_checkpoint(model, save_epoch, cur_iter, prefix)
 
         model.train()
 
         pbar = tqdm(iterable=train_data_loader)
 
-        for batch in pbar:
-            # --------------train------------
-            if dataset in [
-                "ukiyo_e256",
-                "ukiyo_e128",
-                "ukiyo_e64",
-                "dsprites"
-            ]:
-                batch = batch[0]
-            # Perform train step with specific loss funtion
-            solver.train_step(batch, cur_iter)
+        with torch.autograd.profiler.profile(enabled=config.profile) as prof:
+            for batch in pbar:
+                # --------------train------------
+                if len(batch) == 2:  # (image,label) tuple
+                    batch = batch[0]
+                # Perform train step with specific loss funtion
+                solver.train_step(batch, cur_iter)
+                if config.profile and cur_iter == 50:
+                    break
 
-            cur_iter += 1
-        e_scheduler.step()
-        d_scheduler.step()
+                cur_iter += 1
+            e_scheduler.step()
+            d_scheduler.step()
         pbar.close()
 
-        if epoch == num_epochs - 1:
+        if config.profile:
+            print(prof.key_averages().table(sort_by="self_cpu_time_total"))
+            break
+
+        if epoch == config.num_epochs - 1:
             b_size = batch.size(0)
             real_batch = batch.to(solver.device)
-            noise_batch = torch.randn(size=(b_size, z_dim)).to(device)
+            noise_batch = torch.randn(size=(b_size, config.z_dim)).to(device)
             fake = model.sample(noise_batch)
             solver.write_images(real_batch, fake, cur_iter)
 
             # save models
-            prefix = f"{dataset}_{solver}_betas_{str(beta_kl)}_{str(beta_neg)}_{str(beta_rec)}_zdim_{z_dim}_{arch}_{optimizer}"
+            prefix = f"{config.dataset}_{solver}_betas_{str(config.beta_kl)}_{str(config.beta_neg)}_{str(config.beta_rec)}_zdim_{config.z_dim}_{config.arch}_{config.optimizer}"
             save_checkpoint(model, epoch, cur_iter, prefix)
             model.train()

@@ -186,14 +186,15 @@ class IntroSolver(VAESolver):
             raise SystemError
 
         dif_kl = -lossE_real_kl.data.cpu() + lossD_fake_kl.data.cpu()
-        self.write_scalars(
-            cur_iter,
-            losses=dict(
-                r_loss=loss_rec.data.cpu().item(),
-                kl=lossE_real_kl.data.cpu().item(),
-                expelbo_f=expelbo_fake.cpu().item(),
-            ),
-            diff_kl=dif_kl.item(),
-        )
-        self.write_images(real_batch, fake, cur_iter)
-        self.write_disentanglemnt_scores(cur_iter)
+        if self.writer:
+            self.write_scalars(
+                cur_iter,
+                losses=dict(
+                    r_loss=loss_rec.data.cpu().item(),
+                    kl=lossE_real_kl.data.cpu().item(),
+                    expelbo_f=expelbo_fake.cpu().item(),
+                ),
+                diff_kl=dif_kl.item(),
+            )
+            self.write_images(real_batch, fake, cur_iter)
+            self.write_disentanglemnt_scores(cur_iter)
