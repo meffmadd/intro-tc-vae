@@ -55,7 +55,7 @@ def train_soft_intro_vae(
 ):
     """
     :param solver_type: the type of objective function to be optimized: ['vae','intro','tc','intro-tc']
-    :param dataset: dataset to train on: ['ukiyo_e256', 'ukiyo_e128', 'ukiyo_e64', 'cifar10', 'fmnist']
+    :param dataset: dataset to train on: ['ukiyo_e256', 'ukiyo_e128', 'ukiyo_e64', 'cifar10']
     :param arch: model architecture: ['conv', 'res', 'inception']
     :param z_dim: number of latent dimensions
     :param lr_e: learning rate for encoder
@@ -116,7 +116,7 @@ def train_soft_intro_vae(
 
     writer = (
         SummaryWriter(
-            comment=f"_{dataset}_z{z_dim}_{beta_kl}_{beta_neg}_{beta_rec}_{arch}_{optimizer}_"
+            comment=f"_{dataset}_z{z_dim}_{beta_kl}_{beta_neg}_{beta_rec}_{arch}_{optimizer}"
         )
         if use_tensorboard
         else None
@@ -133,9 +133,6 @@ def train_soft_intro_vae(
     if pretrained is not None:
         load_model(model, pretrained, device)
     print(model)
-
-    fig_dir = "./figures_" + dataset
-    os.makedirs(fig_dir, exist_ok=True)
 
     if optimizer == "adam":
         optimizer_e = optim.Adam(model.encoder.parameters(), lr=lr_e)
@@ -196,7 +193,6 @@ def train_soft_intro_vae(
 
     cur_iter = 0
     for epoch in range(start_epoch, num_epochs):
-        diff_kls = []
         # save models
         if epoch % save_interval == 0 and epoch > 0:
             save_epoch = (epoch // save_interval) * save_interval
@@ -223,13 +219,6 @@ def train_soft_intro_vae(
         e_scheduler.step()
         d_scheduler.step()
         pbar.close()
-        if exit_on_negative_diff and epoch > 50 and np.mean(diff_kls) < -1.0:
-            print(
-                f"the kl difference [{np.mean(diff_kls):.3f}] between fake and real is negative (no sampling improvement)"
-            )
-            print("try to lower beta_neg hyperparameter")
-            print("exiting...")
-            raise SystemError("Negative KL Difference")
 
         if epoch == num_epochs - 1:
             b_size = batch.size(0)
