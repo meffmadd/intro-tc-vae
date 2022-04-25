@@ -15,7 +15,7 @@ import random
 import time
 import numpy as np
 from tqdm import tqdm
-from dataset import DSprites, UkiyoE
+from dataset import DSprites, UkiyoE, WrappedDataLoader
 import matplotlib.pyplot as plt
 import matplotlib
 from contextlib import nullcontext
@@ -116,13 +116,17 @@ def train_soft_intro_vae(config: Config):
         optimizer_d, milestones=(350,), gamma=0.1
     )
 
-    train_data_loader = DataLoader(
+    _train_data_loader = DataLoader(
         train_set,
         batch_size=config.batch_size,
         shuffle=True,
         num_workers=config.num_workers,
         pin_memory=True,
     )
+
+    def batch_to_device(x: torch.Tensor, y: torch.Tensor):
+        return x.to(device), y.to(device)
+    train_data_loader = WrappedDataLoader(_train_data_loader, batch_to_device)
 
     grad_scaler = torch.cuda.amp.GradScaler()
 

@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 import torch
 import torch.utils.data as data
 import numpy as np
@@ -10,6 +10,22 @@ import random
 import torchvision.transforms as transforms
 from torchvision.io import read_image
 from torchvision.transforms.functional import resize
+from torch.utils.data import DataLoader
+
+
+class WrappedDataLoader:
+    def __init__(self, data_loader: DataLoader, pre_process: Callable):
+        self.dl = data_loader
+        self.func = pre_process
+
+    def __len__(self):
+        return len(self.dl)
+
+    def __iter__(self):
+        batches = iter(self.dl)
+        for b in batches:
+            yield (self.func(*b))
+
 
 class DisentanglementDataset(data.Dataset):
     @property

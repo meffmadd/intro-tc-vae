@@ -97,7 +97,7 @@ class VAESolver:
     def _write_images_helper(self, batch, cur_iter):
         if self.writer is not None and cur_iter % self.test_iter == 0:
             b_size = batch.size(0)
-            noise_batch = torch.randn(size=(b_size, self.model.zdim)).to(self.device)
+            noise_batch = torch.randn(size=(b_size, self.model.zdim), device=self.device)
             fake = self.model.sample(noise_batch).to(self.device)
             self.write_images(batch, fake, cur_iter)
 
