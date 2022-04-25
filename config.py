@@ -58,11 +58,11 @@ _default_config = dict(
     test_iter=5000,
 )
 
-def load_config(path: str) -> Config:
+def load_config(path: str, update_dict: dict) -> Config:
     if not os.path.isabs(path):
         path = os.path.abspath(path)
     with open(path, "r") as f:
         c = json.load(f)
-    c = {**_default_config, **c} # update default config values with provided config
+    c = {**_default_config, **c, **update_dict} # update default config values with provided config
     return Config(**c)
 
