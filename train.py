@@ -77,7 +77,7 @@ def train_soft_intro_vae(config: Config):
 
     writer = (
         SummaryWriter(
-            comment=f"_{config.dataset}_z{config.z_dim}_{config.beta_kl}_{config.beta_neg}_{config.beta_rec}_{config.arch}_{config.optimizer}"
+            comment=f"_{config.solver}_{config.dataset}_z{config.z_dim}_{config.beta_kl}_{config.beta_neg}_{config.beta_rec}_{config.arch}_{config.optimizer}"
         )
         if config.use_tensorboard
         else None
@@ -160,7 +160,7 @@ def train_soft_intro_vae(config: Config):
         # save models
         if epoch % config.save_interval == 0 and epoch > 0:
             save_epoch = (epoch // config.save_interval) * config.save_interval
-            prefix = f"{config.dataset}_{solver}_betas_{str(config.beta_kl)}_{str(config.beta_neg)}_{str(config.beta_rec)}_zdim_{config.z_dim}_{config.arch}_{config.optimizer}"
+            prefix = f"{config.solver}_{config.dataset}_{solver}_betas_{str(config.beta_kl)}_{str(config.beta_neg)}_{str(config.beta_rec)}_zdim_{config.z_dim}_{config.arch}_{config.optimizer}"
             save_checkpoint(model, save_epoch, cur_iter, prefix)
 
         model.train()
@@ -194,6 +194,6 @@ def train_soft_intro_vae(config: Config):
             solver.write_images(real_batch, fake, cur_iter)
 
             # save models
-            prefix = f"{config.dataset}_{solver}_betas_{str(config.beta_kl)}_{str(config.beta_neg)}_{str(config.beta_rec)}_zdim_{config.z_dim}_{config.arch}_{config.optimizer}"
+            prefix = f"{config.solver}_{config.dataset}_{solver}_betas_{str(config.beta_kl)}_{str(config.beta_neg)}_{str(config.beta_rec)}_zdim_{config.z_dim}_{config.arch}_{config.optimizer}"
             save_checkpoint(model, epoch, cur_iter, prefix)
             model.train()
