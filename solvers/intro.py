@@ -79,17 +79,19 @@ class IntroSolver(VAESolver):
             rec_mu, rec_logvar, z_rec, rec_rec = self.model(rec.detach())
             fake_mu, fake_logvar, z_fake, rec_fake = self.model(fake.detach())
 
-            kl_rec = kl_divergence(rec_logvar, rec_mu, reduce="none")
-            kl_fake = kl_divergence(fake_logvar, fake_mu, reduce="none")
+            # kl_rec = kl_divergence(rec_logvar, rec_mu, reduce="none") # shape: (batch_size,)
+            # kl_fake = kl_divergence(fake_logvar, fake_mu, reduce="none") # shape: (batch_size,)
+            kl_rec = self.compute_kl_loss(z, rec_mu, rec_logvar, reduce="none")
+            kl_fake = self.compute_kl_loss(z, fake_mu, fake_logvar, reduce="none")
 
             loss_rec_rec_e = reconstruction_loss(
                 rec, rec_rec, loss_type=self.recon_loss_type, reduction="none"
-            )
+            ) # shape: (batch_size,)
             while len(loss_rec_rec_e.shape) > 1:
                 loss_rec_rec_e = loss_rec_rec_e.sum(-1)
             loss_rec_fake_e = reconstruction_loss(
                 fake, rec_fake, loss_type=self.recon_loss_type, reduction="none"
-            )
+            ) # shape: (batch_size,)
             while len(loss_rec_fake_e.shape) > 1:
                 loss_rec_fake_e = loss_rec_fake_e.sum(-1)
 

@@ -51,8 +51,8 @@ class VAESolver:
 
         self.recon_loss_type = "mse"
     
-    def compute_kl_loss(self, z: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
-        return kl_divergence(logvar, mu, reduce="mean")
+    def compute_kl_loss(self, z: Optional[Tensor], mu: Tensor, logvar: Tensor, reduce: str = "mean") -> Tensor:
+        return kl_divergence(logvar, mu, reduce=reduce)
 
     def train_step(self, batch: Tensor, cur_iter: int) -> None:
         if len(batch.size()) == 3:
@@ -116,6 +116,7 @@ class VAESolver:
                         ],
                         dim=0,
                     ).data.cpu(),
+                    global_step=cur_iter
                 )
 
     def write_scalars(self, cur_iter: int, losses: dict, **kwargs):

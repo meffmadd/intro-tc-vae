@@ -42,7 +42,7 @@ class TCSovler(VAESolver):
             test_iter
         )
     
-    def compute_kl_loss(self, z: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
+    def compute_kl_loss(self, z: Optional[Tensor], mu: Tensor, logvar: Tensor, reduce: str = "mean") -> Tensor:
             # instead of loss_kl we take the decomposed term (Equation 2)
             logqz_condx = log_qz_cond_x(z, mu, logvar)
             logpz = log_pz(z)
@@ -50,9 +50,14 @@ class TCSovler(VAESolver):
             logqz_prodmarginals = log_prod_qz_i(z, mu, logvar)
             logqz = log_qz(z, mu, logvar)
 
-            mi_loss = torch.mean(logqz_condx - logqz)
-            tc_loss = torch.mean(logqz - logqz_prodmarginals)
-            kl_loss = torch.mean(logqz_prodmarginals - logpz)
+            mi_loss = logqz_condx - logqz
+            tc_loss = logqz - logqz_prodmarginals
+            kl_loss = logqz_prodmarginals - logpz
+            
+            if reduce == "mean":
+                mi_loss = torch.mean(mi_loss)
+                tc_loss = torch.mean(tc_loss)
+                kl_loss = torch.mean(kl_loss)
 
             # recombine to get loss:
             return mi_loss + self.beta_kl * tc_loss + kl_loss
