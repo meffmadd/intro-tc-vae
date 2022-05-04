@@ -15,7 +15,6 @@ class Config:
     lr: float
     batch_size: int
     num_epochs: int
-    dropout: float
     seed: int
 
     z_dim: int
@@ -44,7 +43,6 @@ _default_config = dict(
     lr=2e-4,
     batch_size=128,
     num_epochs=200,
-    dropout=0.0,
     seed=-1,
     z_dim=32,
     beta_rec=1.0,

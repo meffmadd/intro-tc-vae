@@ -1,10 +1,11 @@
+from black import out
 import torch
 import torch.nn as nn
 from ops import reparameterize
 
 
 class ConvolutionalBlock(nn.Module):
-    def __init__(self, inc=64, outc=64, groups=1, scale=1.0, dropout=0.0):
+    def __init__(self, inc=64, outc=64, groups=1, scale=1.0):
         super(ConvolutionalBlock, self).__init__()
 
         midc = int(outc * scale)
@@ -22,12 +23,6 @@ class ConvolutionalBlock(nn.Module):
             )
         else:
             self.conv_expand = None
-
-        if dropout > 0:
-            self.dropout1 = nn.Dropout2d(p=dropout, inplace=False)
-            self.dropout2 = nn.Dropout2d(p=dropout, inplace=False)
-        else:
-            self.dropout1, self.dropout2 = None, None
 
         self.conv1 = nn.Conv2d(
             in_channels=inc,
@@ -54,17 +49,13 @@ class ConvolutionalBlock(nn.Module):
 
     def forward(self, x):
         output = self.relu1(self.bn1(self.conv1(x)))
-        if self.dropout1 is not None:
-            output = self.dropout1(output)
         output = self.relu2(self.bn2(self.conv2(output)))
-        if self.dropout2 is not None:
-            output = self.dropout2(output)
         return output
 
 
 class ResidualBlock(ConvolutionalBlock):
-    def __init__(self, inc=64, outc=64, groups=1, scale=1.0, dropout=0.0):
-        super(ResidualBlock, self).__init__(inc, outc, groups, scale, dropout)
+    def __init__(self, inc=64, outc=64, groups=1, scale=1.0):
+        super(ResidualBlock, self).__init__(inc, outc, groups, scale)
 
     def forward(self, x):
         if self.conv_expand is not None:
@@ -72,20 +63,18 @@ class ResidualBlock(ConvolutionalBlock):
         else:
             identity_data = x
 
-        output = self.relu1(self.bn1(self.conv1(x)))
-        if self.dropout1 is not None:
-            output = self.dropout1(output)
+        # output = self.relu1(self.bn1(self.conv1(x)))
+        output = self.relu1(self.conv1(x))
+        output = self.bn1(output)
         output = self.conv2(output)
         output = self.bn2(output)
         output = self.relu2(torch.add(output, identity_data))
-        if self.dropout2 is not None:
-            output = self.dropout2(output)
         return output
 
 
 class Conv2dBatchNorm(nn.Module):
     def __init__(
-        self, in_size, out_size, kernel_size, stride, padding=0, groups=1, dropout=0.0
+        self, in_size, out_size, kernel_size, stride, padding=0, groups=1
     ):
         super(Conv2dBatchNorm, self).__init__()
         self.conv = nn.Conv2d(
@@ -100,22 +89,16 @@ class Conv2dBatchNorm(nn.Module):
         self.eps = 1e-4
         self.batch_norm = nn.BatchNorm2d(out_size, eps=self.eps)
         self.relu = nn.ReLU(inplace=False)
-        if dropout > 0.0:
-            self.dropout = nn.Dropout2d(p=dropout, inplace=False)
-        else:
-            self.dropout = None
 
     def forward(self, x):
         x = self.conv(x)
         x = self.batch_norm(x)
         x = self.relu(x)
-        if self.dropout is not None:
-            x = self.dropout(x)
         return x
 
 
 class InceptionResnetBlock(nn.Module):
-    def __init__(self, inc=64, outc=64, groups=1, scale=1.0, dropout=0.0):
+    def __init__(self, inc=64, outc=64, groups=1, scale=1.0):
         super(InceptionResnetBlock, self).__init__()
 
         self.eps = 1e-4
@@ -136,14 +119,14 @@ class InceptionResnetBlock(nn.Module):
             self.conv_expand = None
 
         self.branch_0 = Conv2dBatchNorm(
-            inc, outc // 2, kernel_size=1, stride=1, groups=groups, dropout=dropout
+            inc, outc // 2, kernel_size=1, stride=1, groups=groups
         )
         self.branch_1 = nn.Sequential(
             Conv2dBatchNorm(
-                inc, midc, kernel_size=1, stride=1, groups=groups, dropout=dropout
+                inc, midc, kernel_size=1, stride=1, groups=groups
             ),
             Conv2dBatchNorm(
-                midc, outc // 2, kernel_size=1, stride=1, groups=groups, dropout=dropout
+                midc, outc // 2, kernel_size=1, stride=1, groups=groups
             ),
         )
         self.conv = nn.Conv2d(outc, outc, kernel_size=1, stride=1, groups=groups)
@@ -181,7 +164,6 @@ class Encoder(nn.Module):
         zdim=512,
         channels=(64, 128, 256, 512, 512, 512),
         image_size=256,
-        dropout=0.0,
     ):
         super(Encoder, self).__init__()
         self.conv_block = get_conv_class(arch)
@@ -201,13 +183,13 @@ class Encoder(nn.Module):
         for ch in channels[1:]:
             self.main.add_module(
                 "res_in_{}".format(sz),
-                self.conv_block(cc, ch, scale=1.0, dropout=dropout),
+                self.conv_block(cc, ch, scale=1.0),
             )
             self.main.add_module("down_to_{}".format(sz // 2), nn.AvgPool2d(2))
             cc, sz = ch, sz // 2
 
         self.main.add_module(
-            "res_in_{}".format(sz), self.conv_block(cc, cc, scale=1.0, dropout=dropout)
+            "res_in_{}".format(sz), self.conv_block(cc, cc, scale=1.0)
         )
         self.conv_output_size = self.calc_conv_output_size()
         num_fc_features = torch.zeros(self.conv_output_size).view(-1).shape[0]
@@ -236,7 +218,6 @@ class Decoder(nn.Module):
         channels=(64, 128, 256, 512, 512, 512),
         image_size=256,
         conv_input_size=None,
-        dropout=0.0,
     ):
         super(Decoder, self).__init__()
         self.conv_block = get_conv_class(arch)
@@ -261,7 +242,7 @@ class Decoder(nn.Module):
         for ch in channels[::-1]:
             self.main.add_module(
                 "res_in_{}".format(sz),
-                self.conv_block(cc, ch, scale=1.0, dropout=dropout),
+                self.conv_block(cc, ch, scale=1.0),
             )
             self.main.add_module(
                 "up_to_{}".format(sz * 2), nn.Upsample(scale_factor=2, mode="nearest")
@@ -269,7 +250,7 @@ class Decoder(nn.Module):
             cc, sz = ch, sz * 2
 
         self.main.add_module(
-            "res_in_{}".format(sz), self.conv_block(cc, cc, scale=1.0, dropout=dropout)
+            "res_in_{}".format(sz), self.conv_block(cc, cc, scale=1.0)
         )
         self.main.add_module("predict", nn.Conv2d(cc, cdim, 5, 1, 2))
 
@@ -289,7 +270,6 @@ class SoftIntroVAE(nn.Module):
         zdim=512,
         channels=(64, 128, 256, 512, 512, 512),
         image_size=256,
-        dropout=0.0,
     ):
         super(SoftIntroVAE, self).__init__()
 
@@ -302,7 +282,6 @@ class SoftIntroVAE(nn.Module):
             zdim,
             channels,
             image_size,
-            dropout=dropout,
         )
 
         self.decoder = Decoder(
@@ -312,7 +291,6 @@ class SoftIntroVAE(nn.Module):
             channels,
             image_size,
             conv_input_size=self.encoder.conv_output_size,
-            dropout=dropout,
         )
 
     def forward(self, x, deterministic=False):

@@ -91,7 +91,6 @@ def train_soft_intro_vae(config: Config):
         zdim=config.z_dim,
         channels=channels,
         image_size=image_size,
-        dropout=config.dropout,
     ).to(device)
     print(model)
 
