@@ -48,10 +48,8 @@ def train_soft_intro_vae(config: Config):
         else torch.device("cuda:" + str(config.device))
     )
 
-    # run cudnn benchmark for optimal convolution computation
+    # run cudnn benchmark for optimal convolution algorithm
     torch.backends.cudnn.benchmark = True
-
-    # torch.autograd.set_detect_anomaly(True)
 
     # --------------build models -------------------------
     if config.dataset == "ukiyo_e256":
@@ -93,6 +91,26 @@ def train_soft_intro_vae(config: Config):
         image_size=image_size,
     ).to(device)
     print(model)
+    
+    # check output of each named module for NAN values
+    if config.check_nan:
+        def get_nan_hook(name):
+            def nan_hook(self, _, output):
+                if not isinstance(output, tuple):
+                    outputs = [output]
+                else:
+                    outputs = output
+
+                for i, out in enumerate(outputs):
+                    nan_mask = torch.isnan(out)
+                    if nan_mask.any():
+                        print("In", name)
+                        raise RuntimeError(f"Found NAN in output {i} at indices: ", nan_mask.nonzero(), "where:", out[nan_mask.nonzero()[:, 0].unique(sorted=True)])
+
+            return nan_hook
+
+        for name, submodule in model.named_modules():
+            submodule.register_forward_hook(get_nan_hook(name))
 
     lr_e, lr_d = config.lr, config.lr
     if config.optimizer == "adam":

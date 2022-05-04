@@ -34,7 +34,7 @@ class ConvolutionalBlock(nn.Module):
             bias=False,
         )
         self.bn1 = nn.BatchNorm2d(midc, eps=self.eps)
-        self.relu1 = nn.LeakyReLU(0.2, inplace=False)
+        self.relu1 = nn.LeakyReLU(0.1, inplace=False)
         self.conv2 = nn.Conv2d(
             in_channels=midc,
             out_channels=outc,
@@ -45,7 +45,7 @@ class ConvolutionalBlock(nn.Module):
             bias=False,
         )
         self.bn2 = nn.BatchNorm2d(outc, eps=self.eps)
-        self.relu2 = nn.LeakyReLU(0.2, inplace=False)
+        self.relu2 = nn.LeakyReLU(0.1, inplace=False)
 
     def forward(self, x):
         output = self.relu1(self.bn1(self.conv1(x)))
@@ -63,9 +63,7 @@ class ResidualBlock(ConvolutionalBlock):
         else:
             identity_data = x
 
-        # output = self.relu1(self.bn1(self.conv1(x)))
-        output = self.relu1(self.conv1(x))
-        output = self.bn1(output)
+        output = self.relu1(self.bn1(self.conv1(x)))
         output = self.conv2(output)
         output = self.bn2(output)
         output = self.relu2(torch.add(output, identity_data))
@@ -175,7 +173,7 @@ class Encoder(nn.Module):
         self.main = nn.Sequential(
             nn.Conv2d(cdim, cc, 5, 1, 2, bias=False),
             nn.BatchNorm2d(cc, eps=1e-4),
-            nn.LeakyReLU(0.2),
+            nn.LeakyReLU(0.1),
             nn.AvgPool2d(2),
         )
 
@@ -233,7 +231,7 @@ class Decoder(nn.Module):
  
         self.fc = nn.Sequential(
             nn.Linear(zdim, num_fc_features),
-            nn.ReLU(True),
+            nn.ReLU6(inplace=False) # limit output before convolutions to avoid NANs when using amp
         )
 
         sz = 4

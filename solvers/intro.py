@@ -196,9 +196,6 @@ class IntroSolver(VAESolver):
                 torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
             self.optimizer_d.step()
 
-        if torch.isnan(lossD) or torch.isnan(lossE):
-            raise SystemError
-
         dif_kl = -lossE_real_kl.data.cpu() + lossD_fake_kl.data.cpu()
         if self.writer:
             self.write_scalars(

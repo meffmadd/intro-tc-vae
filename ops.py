@@ -125,13 +125,11 @@ def kl_divergence(logvar: Tensor, mu: Tensor, reduce="sum") -> Tensor:
     return kl
 
 
-@torch.jit.script
 def kl_no_reduce(logvar: Tensor, mu: Tensor) -> Tensor:
     kl = -0.5 * (1 + logvar - logvar.exp() - mu.pow(2)).sum(1)
     return kl
 
 
-@torch.jit.script
 def reparameterize(mu: Tensor, logvar: Tensor) -> Tensor:
     """This function applies the reparameterization trick:
     z = mu(X) + sigma(X)^0.5 * epsilon, where epsilon ~ N(0,I)
