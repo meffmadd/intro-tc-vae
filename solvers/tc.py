@@ -25,7 +25,8 @@ class TCSovler(VAESolver):
         use_amp: bool,
         grad_scaler: Optional[GradScaler],
         writer: Optional[SummaryWriter] = None,
-        test_iter: int = 1000
+        test_iter: int = 1000,
+        clip: Optional[float] = None,
     ):
         super().__init__(
             dataset,
@@ -39,7 +40,8 @@ class TCSovler(VAESolver):
             use_amp,
             grad_scaler,
             writer,
-            test_iter
+            test_iter,
+            clip
         )
     
     def compute_kl_loss(self, z: Optional[Tensor], mu: Tensor, logvar: Tensor, reduce: str = "mean") -> Tensor:
@@ -84,11 +86,17 @@ class TCSovler(VAESolver):
 
         if self.use_amp:
             self.grad_scaler.scale(loss).backward()
+            if self.clip:
+                self.grad_scaler.unscale_(self.optimizer_e)
+                self.grad_scaler.unscale_(self.optimizer_d)
+                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
             self.grad_scaler.step(self.optimizer_e)
             self.grad_scaler.step(self.optimizer_d)
             self.grad_scaler.update()
         else:
             loss.backward()
+            if self.clip:
+                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
             self.optimizer_e.step()
             self.optimizer_d.step()
 

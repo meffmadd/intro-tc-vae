@@ -89,7 +89,7 @@ def on_off_diag(x: Tensor):
     return diag, off_diag
 
 
-def entropy(x: np.ndarray, base=None, axis=0, eps=1e-12):
+def entropy(x: np.ndarray, base=None, axis=0, eps=1e-9):
     """Calculates entropy for a sequence of classes or probabilities."""
     if not isinstance(x, np.ndarray):
         raise TypeError("Input x has to be a numpy.ndarray object!")

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 import json
 import os
+from typing import Optional
 
 @dataclass
 class Config:
@@ -26,6 +27,7 @@ class Config:
     use_tensorboard: bool
     use_amp: bool
     profile: bool
+    clip: Optional[float]
 
     num_workers: int
     save_interval: int
@@ -56,6 +58,7 @@ _default_config = dict(
     save_interval=100,
     start_epoch=0,
     test_iter=5000,
+    clip=None,
 )
 
 def load_config(path: str, update_dict: dict) -> Config:

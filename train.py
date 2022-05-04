@@ -51,6 +51,8 @@ def train_soft_intro_vae(config: Config):
     # run cudnn benchmark for optimal convolution computation
     torch.backends.cudnn.benchmark = True
 
+    # torch.autograd.set_detect_anomaly(True)
+
     # --------------build models -------------------------
     if config.dataset == "ukiyo_e256":
         image_size = 256
@@ -95,8 +97,8 @@ def train_soft_intro_vae(config: Config):
 
     lr_e, lr_d = config.lr, config.lr
     if config.optimizer == "adam":
-        optimizer_e = optim.Adam(model.encoder.parameters(), lr=lr_e)
-        optimizer_d = optim.Adam(model.decoder.parameters(), lr=lr_d)
+        optimizer_e = optim.Adam(model.encoder.parameters(), lr=lr_e, eps=1e-4)
+        optimizer_d = optim.Adam(model.decoder.parameters(), lr=lr_d, eps=1e-4)
     elif config.optimizer == "adadelta":
         optimizer_e = optim.Adadelta(model.encoder.parameters(), lr=lr_e)
         optimizer_d = optim.Adadelta(model.decoder.parameters(), lr=lr_d)
@@ -143,6 +145,7 @@ def train_soft_intro_vae(config: Config):
         grad_scaler=grad_scaler,
         writer=writer,
         test_iter=config.test_iter,
+        clip=config.clip,
     )
     if config.solver == "vae":
         solver = VAESolver(**solver_kwargs)

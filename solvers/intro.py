@@ -27,7 +27,8 @@ class IntroSolver(VAESolver):
         use_amp: bool,
         grad_scaler: Optional[GradScaler],
         writer: Optional[SummaryWriter] = None,
-        test_iter: int = 1000
+        test_iter: int = 1000,
+        clip: Optional[float] = None,
     ):
         super().__init__(
             dataset,
@@ -41,7 +42,8 @@ class IntroSolver(VAESolver):
             use_amp,
             grad_scaler,
             writer,
-            test_iter
+            test_iter,
+            clip
         )
         self.beta_neg = beta_neg
         self.gamma_r = 1e-8
@@ -125,9 +127,14 @@ class IntroSolver(VAESolver):
 
         if self.use_amp:
             self.grad_scaler.scale(lossE).backward()
+            if self.clip:
+                self.grad_scaler.unscale_(self.optimizer_e)
+                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
             self.grad_scaler.step(self.optimizer_e)
         else:
             lossE.backward()
+            if self.clip:
+                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
             self.optimizer_e.step()
 
         # ========= Update D ==================
@@ -178,10 +185,15 @@ class IntroSolver(VAESolver):
 
         if self.use_amp:
             self.grad_scaler.scale(lossD).backward()
+            if self.clip:
+                self.grad_scaler.unscale_(self.optimizer_d)
+                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
             self.grad_scaler.step(self.optimizer_d)
             self.grad_scaler.update()
         else:
             lossD.backward()
+            if self.clip:
+                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
             self.optimizer_d.step()
 
         if torch.isnan(lossD) or torch.isnan(lossE):

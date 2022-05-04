@@ -8,6 +8,7 @@ class ConvolutionalBlock(nn.Module):
         super(ConvolutionalBlock, self).__init__()
 
         midc = int(outc * scale)
+        self.eps = 1e-4
 
         if inc is not outc:
             self.conv_expand = nn.Conv2d(
@@ -37,8 +38,8 @@ class ConvolutionalBlock(nn.Module):
             groups=groups,
             bias=False,
         )
-        self.bn1 = nn.BatchNorm2d(midc)
-        self.relu1 = nn.LeakyReLU(0.2, inplace=True)
+        self.bn1 = nn.BatchNorm2d(midc, eps=self.eps)
+        self.relu1 = nn.LeakyReLU(0.2, inplace=False)
         self.conv2 = nn.Conv2d(
             in_channels=midc,
             out_channels=outc,
@@ -48,8 +49,8 @@ class ConvolutionalBlock(nn.Module):
             groups=groups,
             bias=False,
         )
-        self.bn2 = nn.BatchNorm2d(outc)
-        self.relu2 = nn.LeakyReLU(0.2, inplace=True)
+        self.bn2 = nn.BatchNorm2d(outc, eps=self.eps)
+        self.relu2 = nn.LeakyReLU(0.2, inplace=False)
 
     def forward(self, x):
         output = self.relu1(self.bn1(self.conv1(x)))
@@ -96,7 +97,8 @@ class Conv2dBatchNorm(nn.Module):
             groups=groups,
             bias=False,
         )
-        self.batch_norm = nn.BatchNorm2d(out_size)
+        self.eps = 1e-4
+        self.batch_norm = nn.BatchNorm2d(out_size, eps=self.eps)
         self.relu = nn.ReLU(inplace=False)
         if dropout > 0.0:
             self.dropout = nn.Dropout2d(p=dropout, inplace=False)
@@ -116,6 +118,7 @@ class InceptionResnetBlock(nn.Module):
     def __init__(self, inc=64, outc=64, groups=1, scale=1.0, dropout=0.0):
         super(InceptionResnetBlock, self).__init__()
 
+        self.eps = 1e-4
         midc = int(outc * scale)
         assert outc % 2 == 0
 
@@ -189,7 +192,7 @@ class Encoder(nn.Module):
         cc = channels[0]
         self.main = nn.Sequential(
             nn.Conv2d(cdim, cc, 5, 1, 2, bias=False),
-            nn.BatchNorm2d(cc),
+            nn.BatchNorm2d(cc, eps=1e-4),
             nn.LeakyReLU(0.2),
             nn.AvgPool2d(2),
         )
