@@ -1,3 +1,4 @@
+import math
 from black import out
 import torch
 import torch.nn as nn
@@ -34,7 +35,7 @@ class ConvolutionalBlock(nn.Module):
             bias=False,
         )
         self.bn1 = nn.BatchNorm2d(midc, eps=self.eps)
-        self.relu1 = nn.LeakyReLU(0.1, inplace=False)
+        self.relu1 = nn.LeakyReLU(0.05, inplace=False)
         self.conv2 = nn.Conv2d(
             in_channels=midc,
             out_channels=outc,
@@ -45,7 +46,7 @@ class ConvolutionalBlock(nn.Module):
             bias=False,
         )
         self.bn2 = nn.BatchNorm2d(outc, eps=self.eps)
-        self.relu2 = nn.LeakyReLU(0.1, inplace=False)
+        self.relu2 = nn.LeakyReLU(0.05, inplace=False)
 
     def forward(self, x):
         output = self.relu1(self.bn1(self.conv1(x)))
@@ -86,7 +87,7 @@ class Conv2dBatchNorm(nn.Module):
         )
         self.eps = 1e-4
         self.batch_norm = nn.BatchNorm2d(out_size, eps=self.eps)
-        self.relu = nn.ReLU(inplace=False)
+        self.relu = nn.LeakyReLU(0.05, inplace=False)
 
     def forward(self, x):
         x = self.conv(x)
@@ -128,7 +129,7 @@ class InceptionResnetBlock(nn.Module):
             ),
         )
         self.conv = nn.Conv2d(outc, outc, kernel_size=1, stride=1, groups=groups)
-        self.relu = nn.ReLU(inplace=False)
+        self.relu = nn.LeakyReLU(0.05, inplace=False)
 
     def forward(self, x):
         if self.conv_expand is not None:
@@ -173,7 +174,7 @@ class Encoder(nn.Module):
         self.main = nn.Sequential(
             nn.Conv2d(cdim, cc, 5, 1, 2, bias=False),
             nn.BatchNorm2d(cc, eps=1e-4),
-            nn.LeakyReLU(0.1),
+            nn.LeakyReLU(0.05, inplace=False),
             nn.AvgPool2d(2),
         )
 
@@ -231,10 +232,10 @@ class Decoder(nn.Module):
  
         self.fc = nn.Sequential(
             nn.Linear(zdim, num_fc_features),
-            nn.ReLU6(inplace=False) # limit output before convolutions to avoid NANs when using amp
+            nn.LeakyReLU(0.05, inplace=False) # limit output before convolutions to avoid NANs when using amp
         )
 
-        sz = 4
+        sz = int(math.sqrt(num_fc_features // cc))
 
         self.main = nn.Sequential()
         for ch in channels[::-1]:
@@ -251,6 +252,7 @@ class Decoder(nn.Module):
             "res_in_{}".format(sz), self.conv_block(cc, cc, scale=1.0)
         )
         self.main.add_module("predict", nn.Conv2d(cc, cdim, 5, 1, 2))
+        self.main.add_module("sigmoid", nn.Sigmoid())
 
     def forward(self, z):
         z = z.view(z.size(0), -1)
