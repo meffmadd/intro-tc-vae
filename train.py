@@ -1,5 +1,6 @@
 # imports
 # torch and friends
+from functools import reduce
 from config import Config
 import torch
 import torch.optim as optim
@@ -91,21 +92,27 @@ def train_soft_intro_vae(config: Config):
         image_size=image_size,
     ).to(device)
     print(model)
-    
-    # check output of each named module for NAN values
-    if config.check_nan:
+    print("{:,} Parameters".format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
+
+    if config.anomaly_detection:
+        torch.autograd.set_detect_anomaly(True) 
+        def get_module_by_name(module, access_string):
+            names = access_string.split(sep='.')
+            return reduce(getattr, names, module)
+
         def get_nan_hook(name):
             def nan_hook(self, _, output):
                 if not isinstance(output, tuple):
                     outputs = [output]
                 else:
                     outputs = output
-
                 for i, out in enumerate(outputs):
                     nan_mask = torch.isnan(out)
                     if nan_mask.any():
-                        print("In", name)
-                        raise RuntimeError(f"Found NAN in output {i} at indices: ", nan_mask.nonzero(), "where:", out[nan_mask.nonzero()[:, 0].unique(sorted=True)])
+                        module = get_module_by_name(model, name)
+                        print("bias:", module.bias)
+                        print("weight:", module.weight)
+                        raise RuntimeError(f"In {name}: Found NAN in output {i}:", out[nan_mask.nonzero()[:, 0].unique(sorted=True)])
 
             return nan_hook
 
@@ -128,22 +135,17 @@ def train_soft_intro_vae(config: Config):
     else:
         raise ValueError("Unknown optimizer")
 
-    e_scheduler = optim.lr_scheduler.MultiStepLR(
-        optimizer_e, milestones=(350,), gamma=0.1
-    )
-    d_scheduler = optim.lr_scheduler.MultiStepLR(
-        optimizer_d, milestones=(350,), gamma=0.1
-    )
-
     _train_data_loader = DataLoader(
         train_set,
         batch_size=config.batch_size,
         shuffle=True,
         num_workers=config.num_workers,
-        pin_memory=True,
     )
 
     def batch_to_device(x: torch.Tensor, y: torch.Tensor):
+        if config.anomaly_detection:
+            assert x.max() <= 1.0
+            assert x.min() >= 0.0
         return x.to(device), y.to(device)
     train_data_loader = WrappedDataLoader(_train_data_loader, batch_to_device)
 
@@ -194,12 +196,20 @@ def train_soft_intro_vae(config: Config):
                     batch = batch[0]
                 # Perform train step with specific loss funtion
                 solver.train_step(batch, cur_iter)
+                
+                if config.anomaly_detection:
+                    with torch.no_grad():
+                        max = (None, float("-inf"))
+                        for n, p in model.named_parameters():
+                            norm = torch.sum(p.grad.data**2).item()
+                            if norm > max[1]:
+                                max = (n, norm)
+                        print(f"Max parameter norm of {max[1]} found in {n}")
+
                 if config.profile and cur_iter == 50:
                     break
 
                 cur_iter += 1
-            e_scheduler.step()
-            d_scheduler.step()
         pbar.close()
 
         if config.profile:

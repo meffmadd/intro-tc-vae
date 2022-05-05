@@ -27,7 +27,7 @@ class Config:
     use_amp: bool
     profile: bool
     clip: Optional[float]
-    check_nan: bool
+    anomaly_detection: bool
 
     num_workers: int
     save_interval: int
@@ -58,7 +58,7 @@ _default_config = dict(
     start_epoch=0,
     test_iter=5000,
     clip=None,
-    check_nan=False
+    anomaly_detection=False
 )
 
 def load_config(path: str, update_dict: dict) -> Config:
