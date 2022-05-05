@@ -88,7 +88,7 @@ class MPI3D(DisentanglementDataset):
 
 
 class DSprites(DisentanglementDataset):
-    def __init__(self, arr, resize: int = 64) -> None:
+    def __init__(self, arr, resize: int = 64):
         self.imgs = arr['imgs'] * 255
         self.latents_values = arr['latents_values']
         self.resize = resize
@@ -127,13 +127,13 @@ if __name__ == "__main__":
 class UkiyoE(data.Dataset):
     def __init__(self, root, df, category, resize=256):
         self.root = root
-        self.labels = df
+        self.labels = df[category].astype("category")
         self.category = category
         self.resize = resize
 
         self.entries = [
             tuple(r)
-            for r in df[["filename", category]].to_numpy()
+            for r in zip(df["filename"], self.labels.cat.codes)
             if os.path.exists(os.path.join(self.root, r[0]))
         ]
         self.input_transform = transforms.Compose(
@@ -146,7 +146,7 @@ class UkiyoE(data.Dataset):
     def __len__(self):
         return len(self.entries)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> Tuple[torch.Tensor, np.ndarray]:
         image_filename, label = self.entries[index]
         image_filepath = os.path.join(self.root, image_filename)
         image = load_image(
@@ -157,7 +157,11 @@ class UkiyoE(data.Dataset):
             is_random_crop=False,
         )
         image = self.input_transform(image)
-        return image, label
+        return image, np.array(label)
+
+    def get_label(self, index) -> str:
+        code = self.labels.cat.codes[index]
+        return self.labels.cat.categories[code]
 
     @classmethod
     def load_data(cls, resize: int = 256) -> "DisentanglementDataset":
