@@ -89,14 +89,14 @@ class TCSovler(VAESolver):
             if self.clip:
                 self.grad_scaler.unscale_(self.optimizer_e)
                 self.grad_scaler.unscale_(self.optimizer_d)
-                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
             self.grad_scaler.step(self.optimizer_e)
             self.grad_scaler.step(self.optimizer_d)
             self.grad_scaler.update()
         else:
             loss.backward()
             if self.clip:
-                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
             self.optimizer_e.step()
             self.optimizer_d.step()
 

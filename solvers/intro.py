@@ -10,6 +10,7 @@ from torch.cuda.amp.grad_scaler import GradScaler
 from torch.utils.tensorboard import SummaryWriter
 
 from ops import kl_divergence, reconstruction_loss, reparameterize
+from utils import check_non_finite_gradints
 
 
 class IntroSolver(VAESolver):
@@ -48,16 +49,11 @@ class IntroSolver(VAESolver):
         self.beta_neg = beta_neg
         self.gamma_r = 1e-8
         # normalize by images size (channels * height * width)
-        self.scale = 1 / self.model.cdim * self.model.encoder.image_size**2
+        self.scale = 1 / (self.model.cdim * self.model.encoder.image_size**2)
 
     def train_step(self, batch: Tensor, cur_iter: int) -> None:
         if len(batch.size()) == 3:
             batch = batch.unsqueeze(0)
-
-        b_size = batch.size(0)
-        noise_batch = torch.randn(size=(b_size, self.model.zdim)).to(self.device)
-
-        real_batch = batch.to(self.device)
 
         # =========== Update E ================
         for param in self.model.encoder.parameters():
@@ -65,12 +61,14 @@ class IntroSolver(VAESolver):
         for param in self.model.decoder.parameters():
             param.requires_grad = False
 
-        with torch.cuda.amp.autocast() if self.use_amp else nullcontext():
-            fake = self.model.sample(noise_batch)
+        with torch.cuda.amp.autocast(enabled=self.use_amp):
+            b_size = batch.size(0)
+            noise_batch = torch.randn(size=(b_size, self.model.zdim)).to(self.device)
 
-            real_mu, real_logvar = self.model.encode(real_batch)
-            z = reparameterize(real_mu, real_logvar)
-            rec = self.model.decoder(z)
+            real_batch = batch.to(self.device)
+
+            fake = self.model.sample(noise_batch)
+            real_mu, real_logvar, z, rec = self.model(real_batch)
 
             loss_rec = reconstruction_loss(
                 real_batch, rec, loss_type=self.recon_loss_type, reduction="mean"
@@ -81,10 +79,8 @@ class IntroSolver(VAESolver):
             rec_mu, rec_logvar, z_rec, rec_rec = self.model(rec.detach())
             fake_mu, fake_logvar, z_fake, rec_fake = self.model(fake.detach())
 
-            # kl_rec = kl_divergence(rec_logvar, rec_mu, reduce="none") # shape: (batch_size,)
-            # kl_fake = kl_divergence(fake_logvar, fake_mu, reduce="none") # shape: (batch_size,)
-            kl_rec = self.compute_kl_loss(z, rec_mu, rec_logvar, reduce="none")
-            kl_fake = self.compute_kl_loss(z, fake_mu, fake_logvar, reduce="none")
+            kl_rec = self.compute_kl_loss(z, rec_mu, rec_logvar, reduce="none") # shape: (batch_size,)
+            kl_fake = self.compute_kl_loss(z, fake_mu, fake_logvar, reduce="none") # shape: (batch_size,)
 
             loss_rec_rec_e = reconstruction_loss(
                 rec, rec_rec, loss_type=self.recon_loss_type, reduction="none"
@@ -129,12 +125,13 @@ class IntroSolver(VAESolver):
             self.grad_scaler.scale(lossE).backward()
             if self.clip:
                 self.grad_scaler.unscale_(self.optimizer_e)
-                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
             self.grad_scaler.step(self.optimizer_e)
+            self.grad_scaler.update()
         else:
             lossE.backward()
             if self.clip:
-                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
             self.optimizer_e.step()
 
         # ========= Update D ==================
@@ -143,7 +140,7 @@ class IntroSolver(VAESolver):
         for param in self.model.decoder.parameters():
             param.requires_grad = True
 
-        with torch.cuda.amp.autocast() if self.use_amp else nullcontext():
+        with torch.cuda.amp.autocast(enabled=self.use_amp):
             fake = self.model.sample(noise_batch)
             rec = self.model.decoder(z.detach())
             loss_rec = reconstruction_loss(
@@ -187,13 +184,13 @@ class IntroSolver(VAESolver):
             self.grad_scaler.scale(lossD).backward()
             if self.clip:
                 self.grad_scaler.unscale_(self.optimizer_d)
-                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
             self.grad_scaler.step(self.optimizer_d)
             self.grad_scaler.update()
         else:
             lossD.backward()
             if self.clip:
-                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
             self.optimizer_d.step()
 
         dif_kl = -lossE_real_kl.data.cpu() + lossD_fake_kl.data.cpu()
