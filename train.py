@@ -16,7 +16,7 @@ import random
 import time
 import numpy as np
 from tqdm import tqdm
-from dataset import DSprites, UkiyoE, WrappedDataLoader
+from dataset import DSprites, DSpritesSmall, UkiyoE, WrappedDataLoader
 import matplotlib.pyplot as plt
 import matplotlib
 from contextlib import nullcontext
@@ -72,6 +72,11 @@ def train_soft_intro_vae(config: Config):
         image_size = 64
         channels = [64, 128, 256, 512]
         train_set = DSprites.load_data()
+        ch = 1
+    elif config.dataset == "dsprites_small":
+        image_size = 64
+        channels = [64, 128, 256, 512]
+        train_set = DSpritesSmall.load_data()
         ch = 1
     else:
         raise NotImplementedError("dataset is not supported")

@@ -120,6 +120,44 @@ class DSprites(DisentanglementDataset):
         arr = np.load(data_path)
         return DSprites(arr, resize=resize)
 
+def get_spaced_elements(arr, n):
+    """Returns n evenly spaced values from the unique values of the array.
+
+    Parameters
+    ----------
+    arr : np.array
+        The array to select the elements from.
+    n : int
+        The number of elements to select from the unique values in the array.
+    """
+    unique_values = np.unique(arr)
+    idx =  np.round(np.linspace(0, len(unique_values) - 1, n)).astype(int)
+    return unique_values[idx]
+
+class DSpritesSmall(DSprites):
+    def __init__(self, arr, resize: int = 64):
+        self.latents_values = arr['latents_values']
+        # reduce number of unique values for orientation, x position and y position
+        rotation_mask = np.isin(self.latents_values[:,3], get_spaced_elements(self.latents_values[:,3], 4))
+        x_mask = np.isin(self.latents_values[:,4], get_spaced_elements(self.latents_values[:,4], 3))
+        y_mask = np.isin(self.latents_values[:,5], get_spaced_elements(self.latents_values[:,5], 3))
+        mask = np.logical_and(rotation_mask, x_mask, y_mask)
+        self.latents_values = self.latents_values[mask]
+        self.imgs = arr['imgs'][mask] * 255
+        self.resize = resize
+        self.input_transform = transforms.Compose([transforms.ToTensor()])
+    
+    @property
+    def factor_sizes(self) -> List[int]:
+        return [1, 3, 6, 40, 2, 2]
+
+    @classmethod
+    def load_data(cls, resize: int = 64) -> "DisentanglementDataset":
+        data_dir = os.path.expanduser("~/dsprites-dataset")
+        data_path = os.path.join(data_dir, "dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz")
+        arr = np.load(data_path)
+        return DSpritesSmall(arr, resize=resize)
+
 
 if __name__ == "__main__":
     MPI3D.load_data()
