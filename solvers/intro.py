@@ -125,13 +125,13 @@ class IntroSolver(VAESolver):
             self.grad_scaler.scale(lossE).backward()
             if self.clip:
                 self.grad_scaler.unscale_(self.optimizer_e)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
             self.grad_scaler.step(self.optimizer_e)
             self.grad_scaler.update()
         else:
             lossE.backward()
             if self.clip:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
             self.optimizer_e.step()
 
         # ========= Update D ==================
@@ -184,14 +184,17 @@ class IntroSolver(VAESolver):
             self.grad_scaler.scale(lossD).backward()
             if self.clip:
                 self.grad_scaler.unscale_(self.optimizer_d)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
             self.grad_scaler.step(self.optimizer_d)
             self.grad_scaler.update()
         else:
             lossD.backward()
             if self.clip:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
             self.optimizer_d.step()
+
+        if torch.isnan(lossD) or torch.isnan(lossE):
+            raise RuntimeError
 
         dif_kl = -lossE_real_kl.data.cpu() + lossD_fake_kl.data.cpu()
         if self.writer:

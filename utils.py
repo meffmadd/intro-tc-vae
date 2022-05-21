@@ -32,3 +32,12 @@ def save_checkpoint(model, epoch, iteration, prefix=""):
     torch.save(state, model_out_path)
 
     print("model checkpoint saved @ {}".format(model_out_path))
+
+
+def check_non_finite_gradints(model):
+    # check for non-finite gradients
+    for name, param in model.named_parameters():
+        if param.grad is not None:
+            mask = torch.isfinite(param.grad)
+            if not mask.all():
+                print("Non-finite gradients in ", name, (~torch.isfinite(param.grad)).sum().cpu().item(), "values")

@@ -109,10 +109,7 @@ def train_soft_intro_vae(config: Config):
                 for i, out in enumerate(outputs):
                     nan_mask = torch.isnan(out)
                     if nan_mask.any():
-                        module = get_module_by_name(model, name)
-                        print("bias:", module.bias)
-                        print("weight:", module.weight)
-                        raise RuntimeError(f"In {name}: Found NAN in output {i}:", out[nan_mask.nonzero()[:, 0].unique(sorted=True)])
+                        print(f"In {name}: Found NAN in output {i}: {nan_mask.sum().item()}/{np.prod(np.array(output.shape))}")
 
             return nan_hook
 
@@ -195,17 +192,19 @@ def train_soft_intro_vae(config: Config):
                 if len(batch) == 2:  # (image,label) tuple
                     batch = batch[0]
                 # Perform train step with specific loss funtion
+                postfix = {}
                 solver.train_step(batch, cur_iter)
                 
                 if config.anomaly_detection:
                     with torch.no_grad():
-                        max = (None, float("-inf"))
-                        for n, p in model.named_parameters():
+                        max = float("-inf")
+                        for p in model.parameters():
                             norm = torch.sum(p.grad.data**2).item()
-                            if norm > max[1]:
-                                max = (n, norm)
-                        print(f"Max parameter norm of {max[1]} found in {n}")
+                            if norm > max:
+                                max = norm
+                    postfix.update({"L2": f"{max:.1f}"})
 
+                pbar.set_postfix(postfix)
                 if config.profile and cur_iter == 50:
                     break
 
