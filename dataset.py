@@ -149,7 +149,7 @@ class DSpritesSmall(DSprites):
     
     @property
     def factor_sizes(self) -> List[int]:
-        return [1, 3, 6, 40, 2, 2]
+        return [1, 3, 6, 4, 3, 3]
 
     @classmethod
     def load_data(cls, resize: int = 64) -> "DisentanglementDataset":
