@@ -146,6 +146,8 @@ class VAESolver:
             and isinstance(self.dataset, DisentanglementDataset)
             and cur_iter % self.test_iter == 0
         ):
+            if len(self.dataset) < num_samples:
+                num_samples = len(self.dataset) // 2
             score_kwargs = dict(
                 latent_generator=self.latent_generator,
                 model=self.model,
