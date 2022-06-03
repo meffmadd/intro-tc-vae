@@ -186,11 +186,11 @@ def reconstruction_loss(x, recon_x, loss_type="mse", reduction="sum") -> Tensor:
     recon_x = recon_x.view(recon_x.size(0), -1)
     x = x.view(x.size(0), -1)
     if loss_type == "mse":
-        recon_error = F.mse_loss(recon_x, x, reduction=reduction).div(batch_size)
+        recon_error = F.mse_loss(recon_x, x, reduction=reduction)
     elif loss_type == "l1":
-        recon_error = F.l1_loss(recon_x, x, reduction=reduction).div(batch_size)
+        recon_error = F.l1_loss(recon_x, x, reduction=reduction)
     elif loss_type == "bce":
-        recon_error = F.binary_cross_entropy_with_logits(recon_x, x, reduction=reduction).div(batch_size)
+        recon_error = F.binary_cross_entropy_with_logits(recon_x, x, reduction=reduction)
     else:
         raise NotImplementedError
     return recon_error

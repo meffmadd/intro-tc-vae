@@ -24,6 +24,7 @@ class IntroSolver(VAESolver):
         beta_kl: float,
         beta_rec: float,
         beta_neg: float,
+        gamma_r: float,
         device: torch.device,
         use_amp: bool,
         grad_scaler: Optional[GradScaler],
@@ -47,7 +48,7 @@ class IntroSolver(VAESolver):
             clip
         )
         self.beta_neg = beta_neg
-        self.gamma_r = 1e-8
+        self.gamma_r = gamma_r
         # normalize by images size (channels * height * width)
         self.scale = 1 / (self.model.cdim * self.model.encoder.image_size**2)
 
@@ -201,8 +202,8 @@ class IntroSolver(VAESolver):
             self.write_scalars(
                 cur_iter,
                 losses=dict(
-                    r_loss=loss_rec.data.cpu().item(),
-                    kl=lossE_real_kl.data.cpu().item(),
+                    r_loss=self.beta_rec * loss_rec.data.cpu().item(),
+                    kl=self.beta_kl * lossE_real_kl.data.cpu().item(),
                     expelbo_f=expelbo_fake.cpu().item(),
                 ),
                 diff_kl=dif_kl.item(),

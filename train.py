@@ -171,11 +171,11 @@ def train_soft_intro_vae(config: Config):
     if config.solver == "vae":
         solver = VAESolver(**solver_kwargs)
     elif config.solver == "intro":
-        solver = IntroSolver(**solver_kwargs, beta_neg=config.beta_neg)
+        solver = IntroSolver(**solver_kwargs, beta_neg=config.beta_neg, gamma_r=config.gamma_r)
     elif config.solver == "tc":
         solver = TCSovler(**solver_kwargs)
     elif config.solver == "intro-tc":
-        solver = IntroTCSovler(**solver_kwargs, beta_neg=config.beta_neg)
+        solver = IntroTCSovler(**solver_kwargs, beta_neg=config.beta_neg, gamma_r=config.gamma_r)
     else:
         raise ValueError(f"Solver '{config.solver_type}' not supported!")
 

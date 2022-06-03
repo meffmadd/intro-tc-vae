@@ -107,7 +107,7 @@ class TCSovler(VAESolver):
             self.write_scalars(
                 cur_iter,
                 losses=dict(
-                    loss_rec=loss_rec.data.cpu().item(), loss_kl=loss_kl.data.cpu().item()
+                    loss_rec=self.beta_rec * loss_rec.data.cpu().item(), loss_kl=self.beta_kl * loss_kl.data.cpu().item()
                 ),
             )
             self._write_images_helper(real_batch, cur_iter)
