@@ -97,12 +97,17 @@ def train_soft_intro_vae(config: Config):
         image_size=image_size,
     ).to(device)
     print(model)
-    print("{:,} Parameters".format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
+    print(
+        "{:,} Parameters".format(
+            sum(p.numel() for p in model.parameters() if p.requires_grad)
+        )
+    )
 
     if config.anomaly_detection:
-        torch.autograd.set_detect_anomaly(True) 
+        torch.autograd.set_detect_anomaly(True)
+
         def get_module_by_name(module, access_string):
-            names = access_string.split(sep='.')
+            names = access_string.split(sep=".")
             return reduce(getattr, names, module)
 
         def get_nan_hook(name):
@@ -114,7 +119,9 @@ def train_soft_intro_vae(config: Config):
                 for i, out in enumerate(outputs):
                     nan_mask = torch.isnan(out)
                     if nan_mask.any():
-                        print(f"In {name}: Found NAN in output {i}: {nan_mask.sum().item()}/{np.prod(np.array(output.shape))}")
+                        print(
+                            f"In {name}: Found NAN in output {i}: {nan_mask.sum().item()}/{np.prod(np.array(output.shape))}"
+                        )
 
             return nan_hook
 
@@ -149,6 +156,7 @@ def train_soft_intro_vae(config: Config):
             assert x.max() <= 1.0
             assert x.min() >= 0.0
         return x.to(device), y.to(device)
+
     train_data_loader = WrappedDataLoader(_train_data_loader, batch_to_device)
 
     grad_scaler = torch.cuda.amp.GradScaler()
@@ -171,13 +179,21 @@ def train_soft_intro_vae(config: Config):
     if config.solver == "vae":
         solver = VAESolver(**solver_kwargs)
     elif config.solver == "intro":
-        solver = IntroSolver(**solver_kwargs, beta_neg=config.beta_neg, gamma_r=config.gamma_r)
+        solver = IntroSolver(
+            **solver_kwargs, beta_neg=config.beta_neg, gamma_r=config.gamma_r
+        )
     elif config.solver == "tc":
         solver = TCSovler(**solver_kwargs)
     elif config.solver == "intro-tc":
-        solver = IntroTCSovler(**solver_kwargs, beta_neg=config.beta_neg, gamma_r=config.gamma_r)
+        solver = IntroTCSovler(
+            **solver_kwargs, beta_neg=config.beta_neg, gamma_r=config.gamma_r
+        )
     else:
         raise ValueError(f"Solver '{config.solver_type}' not supported!")
+
+    
+    if writer:
+        writer.add_graph(model, next(iter(train_data_loader))[0])
 
     cur_iter = 0
     for epoch in range(config.start_epoch, config.num_epochs):
@@ -198,8 +214,12 @@ def train_soft_intro_vae(config: Config):
                     batch = batch[0]
                 # Perform train step with specific loss funtion
                 postfix = {}
-                solver.train_step(batch, cur_iter)
-                
+                loss = solver.train_step(batch, cur_iter)
+                if isinstance(loss, tuple):
+                    postfix.update({"lossE": f"{loss[0]:.1f}", "lossD": f"{loss[1]:.1f}"})
+                else:
+                    postfix.update({"loss": f"{loss:.1f}"})
+
                 if config.anomaly_detection:
                     with torch.no_grad():
                         max = float("-inf")
@@ -216,6 +236,10 @@ def train_soft_intro_vae(config: Config):
                 cur_iter += 1
         pbar.close()
 
+        for name, weight in model.named_parameters():
+            writer.add_histogram(name, weight, global_step=cur_iter)
+            writer.add_histogram(f'{name}.grad',weight.grad, global_step=cur_iter)
+
         if config.profile:
             print(prof.key_averages().table(sort_by="self_cpu_time_total"))
             break
@@ -231,3 +255,27 @@ def train_soft_intro_vae(config: Config):
             prefix = f"{config.solver}_{config.dataset}_betas_{str(config.beta_kl)}_{str(config.beta_neg)}_{str(config.beta_rec)}_{str(config.gamma_r)}_zdim_{config.z_dim}_{config.arch}_{config.optimizer}"
             save_checkpoint(model, epoch, cur_iter, prefix)
             model.train()
+    
+    if writer:
+        # TODO: change to mean of loss across last epoch
+        if isinstance(loss, tuple):
+            metric_dict = {"lossE": loss[0], "lossD": loss[1]}
+        else:
+            metric_dict = {"lossD": loss}
+        writer.add_hparams(
+            dict(
+                optimizer=config.optimizer,
+                lr=config.lr,
+                batch_size=config.batch_size,
+                solver=config.solver,
+                dataset=config.dataset,
+                z_dim=config.z_dim,
+                beta_kl=config.beta_kl,
+                beta_neg=config.beta_neg,
+                beta_rec=config.beta_rec,
+                gamma_r=config.gamma_r,
+                arch=config.arch,
+                clip=config.clip
+            ),
+            metric_dict=metric_dict
+        )

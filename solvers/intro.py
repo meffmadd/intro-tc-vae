@@ -1,5 +1,5 @@
 from contextlib import nullcontext
-from typing import Optional
+from typing import Optional, Tuple
 from dataset import DisentanglementDataset
 from models import SoftIntroVAE
 from solvers.vae import VAESolver
@@ -52,7 +52,7 @@ class IntroSolver(VAESolver):
         # normalize by images size (channels * height * width)
         self.scale = 1 / (self.model.cdim * self.model.encoder.image_size**2)
 
-    def train_step(self, batch: Tensor, cur_iter: int) -> None:
+    def train_step(self, batch: Tensor, cur_iter: int) -> Tuple[float, float]:
         if len(batch.size()) == 3:
             batch = batch.unsqueeze(0)
 
@@ -197,8 +197,8 @@ class IntroSolver(VAESolver):
         if torch.isnan(lossD) or torch.isnan(lossE):
             raise RuntimeError
 
-        dif_kl = -lossE_real_kl.data.cpu() + lossD_fake_kl.data.cpu()
         if self.writer:
+            dif_kl = -lossE_real_kl.data.cpu() + lossD_fake_kl.data.cpu()
             self.write_scalars(
                 cur_iter,
                 losses=dict(
@@ -208,5 +208,8 @@ class IntroSolver(VAESolver):
                 ),
                 diff_kl=dif_kl.item(),
             )
+            self.write_gradient_norm(cur_iter)
             self.write_images(real_batch, fake, cur_iter)
             self.write_disentanglemnt_scores(cur_iter)
+        
+        return lossE, lossD

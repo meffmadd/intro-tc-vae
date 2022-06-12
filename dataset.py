@@ -171,7 +171,7 @@ class UkiyoE(data.Dataset):
 
         self.entries = [
             tuple(r)
-            for r in zip(df["filename"], self.labels.cat.codes)
+            for r in zip(df["singleface_filename"], self.labels.cat.codes)
             if os.path.exists(os.path.join(self.root, r[0]))
         ]
         self.input_transform = transforms.Compose(

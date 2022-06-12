@@ -64,7 +64,7 @@ class TCSovler(VAESolver):
             # recombine to get loss:
             return mi_loss + self.beta_kl * tc_loss + kl_loss
     
-    def train_step(self, batch: Tensor, cur_iter: int) -> None:
+    def train_step(self, batch: Tensor, cur_iter: int) -> float:
         if len(batch.size()) == 3:
             batch = batch.unsqueeze(0)
 
@@ -110,5 +110,8 @@ class TCSovler(VAESolver):
                     loss_rec=self.beta_rec * loss_rec.data.cpu().item(), loss_kl=self.beta_kl * loss_kl.data.cpu().item()
                 ),
             )
+            self.write_gradient_norm(cur_iter)
             self._write_images_helper(real_batch, cur_iter)
             self.write_disentanglemnt_scores(cur_iter)
+        
+        return loss
