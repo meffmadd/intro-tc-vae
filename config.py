@@ -10,6 +10,7 @@ class Config:
     dataset: str
     arch: str
     optimizer: str
+    recon_loss_type: str
     device: int
 
     lr: float
@@ -40,6 +41,7 @@ _default_config = dict(
     dataset=None,
     arch="res",
     optimizer="adam",
+    recon_loss_type="mse",
     device=-1,
     lr=2e-4,
     batch_size=128,

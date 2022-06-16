@@ -167,6 +167,7 @@ def train_soft_intro_vae(config: Config):
         batch_size=config.batch_size,
         optimizer_e=optimizer_e,
         optimizer_d=optimizer_d,
+        recon_loss_type=config.recon_loss_type,
         beta_kl=config.beta_kl,
         beta_rec=config.beta_rec,
         device=device,
@@ -265,6 +266,7 @@ def train_soft_intro_vae(config: Config):
         writer.add_hparams(
             dict(
                 optimizer=config.optimizer,
+                recon_loss_type=config.recon_loss_type,
                 lr=config.lr,
                 batch_size=config.batch_size,
                 solver=config.solver,

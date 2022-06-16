@@ -26,6 +26,7 @@ class VAESolver:
         batch_size: int,
         optimizer_e: Optimizer,
         optimizer_d: Optimizer,
+        recon_loss_type: str,
         beta_kl: float,
         beta_rec: float,
         device: torch.device,
@@ -50,8 +51,7 @@ class VAESolver:
         self.writer = writer
         self.test_iter = test_iter
         self.clip = clip
-
-        self.recon_loss_type = "mse"
+        self.recon_loss_type = recon_loss_type
     
     def compute_kl_loss(self, z: Optional[Tensor], mu: Tensor, logvar: Tensor, reduce: str = "mean") -> Tensor:
         return kl_divergence(logvar, mu, reduce=reduce)
