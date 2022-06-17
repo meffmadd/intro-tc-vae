@@ -35,7 +35,7 @@ class ConvolutionalBlock(nn.Module):
             bias=False,
         )
         self.bn1 = nn.BatchNorm2d(midc, eps=self.eps)
-        self.relu1 = nn.LeakyReLU(0.05, inplace=False)
+        self.relu1 = nn.ELU(inplace=False)
         self.conv2 = nn.Conv2d(
             in_channels=midc,
             out_channels=outc,
@@ -46,7 +46,7 @@ class ConvolutionalBlock(nn.Module):
             bias=False,
         )
         self.bn2 = nn.BatchNorm2d(outc, eps=self.eps)
-        self.relu2 = nn.LeakyReLU(0.05, inplace=False)
+        self.relu2 = nn.ELU(inplace=False)
 
     def forward(self, x):
         output = self.relu1(self.bn1(self.conv1(x)))
@@ -87,7 +87,7 @@ class Conv2dBatchNorm(nn.Module):
         )
         self.eps = 1e-4
         self.batch_norm = nn.BatchNorm2d(out_size, eps=self.eps)
-        self.relu = nn.LeakyReLU(0.05, inplace=False)
+        self.relu = nn.ELU(inplace=False)
 
     def forward(self, x):
         x = self.conv(x)
@@ -129,7 +129,7 @@ class InceptionResnetBlock(nn.Module):
             ),
         )
         self.conv = nn.Conv2d(outc, outc, kernel_size=1, stride=1, groups=groups)
-        self.relu = nn.LeakyReLU(0.05, inplace=False)
+        self.relu = nn.ELU(inplace=False)
 
     def forward(self, x):
         if self.conv_expand is not None:
@@ -174,7 +174,7 @@ class Encoder(nn.Module):
         self.main = nn.Sequential(
             nn.Conv2d(cdim, cc, 5, 1, 2, bias=False),
             nn.BatchNorm2d(cc, eps=1e-4),
-            nn.LeakyReLU(0.05, inplace=False),
+            nn.ELU(inplace=False),
             nn.AvgPool2d(2),
         )
 
@@ -232,7 +232,7 @@ class Decoder(nn.Module):
  
         self.fc = nn.Sequential(
             nn.Linear(zdim, num_fc_features),
-            nn.LeakyReLU(0.05, inplace=False) # limit output before convolutions to avoid NANs when using amp
+            nn.ELU(inplace=False) # limit output before convolutions to avoid NANs when using amp
         )
 
         sz = int(math.sqrt(num_fc_features // cc))
