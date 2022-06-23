@@ -129,20 +129,10 @@ def train_soft_intro_vae(config: Config):
             submodule.register_forward_hook(get_nan_hook(name))
 
     lr_e, lr_d = config.lr, config.lr
-    if config.optimizer == "adam":
-        optimizer_e = optim.Adam(model.encoder.parameters(), lr=lr_e, eps=1e-4)
-        optimizer_d = optim.Adam(model.decoder.parameters(), lr=lr_d, eps=1e-4)
-    elif config.optimizer == "adadelta":
-        optimizer_e = optim.Adadelta(model.encoder.parameters(), lr=lr_e)
-        optimizer_d = optim.Adadelta(model.decoder.parameters(), lr=lr_d)
-    elif config.optimizer == "adagrad":
-        optimizer_e = optim.Adagrad(model.encoder.parameters(), lr=lr_e)
-        optimizer_d = optim.Adagrad(model.decoder.parameters(), lr=lr_d)
-    elif config.optimizer == "RMSprop":
-        optimizer_e = optim.RMSprop(model.encoder.parameters(), lr=lr_e)
-        optimizer_d = optim.RMSprop(model.decoder.parameters(), lr=lr_d)
-    else:
-        raise ValueError("Unknown optimizer")
+    optim_class = getattr(optim, config.optimizer)
+
+    optimizer_e = optim_class(model.encoder.parameters(), lr=lr_e)
+    optimizer_d = optim_class(model.decoder.parameters(), lr=lr_d)
 
     _train_data_loader = DataLoader(
         train_set,
@@ -191,10 +181,6 @@ def train_soft_intro_vae(config: Config):
         )
     else:
         raise ValueError(f"Solver '{config.solver_type}' not supported!")
-
-    
-    if writer:
-        writer.add_graph(model, next(iter(train_data_loader))[0])
 
     cur_iter = 0
     for epoch in range(config.start_epoch, config.num_epochs):
