@@ -109,10 +109,6 @@ def train_soft_intro_vae(config: Config):
     if config.anomaly_detection:
         torch.autograd.set_detect_anomaly(True)
 
-        def get_module_by_name(module, access_string):
-            names = access_string.split(sep=".")
-            return reduce(getattr, names, module)
-
         def get_nan_hook(name):
             def nan_hook(self, _, output):
                 if not isinstance(output, tuple):
@@ -186,26 +182,6 @@ def train_soft_intro_vae(config: Config):
         raise ValueError(f"Solver '{config.solver_type}' not supported!")
 
     cur_iter = 0
-
-    # predict_conv = model.decoder.main.get_submodule("predict")
-    fc = model.encoder.fc
-
-    if writer:
-        def write_output_histogram_hook(name, test_iter):
-            global prev_write_iter
-            prev_write_iter = -1
-            get_ci = lambda: cur_iter
-            get_pi = lambda: prev_write_iter
-            def update_pi(v):
-                global prev_write_iter
-                prev_write_iter = v
-            def hook(model, input, output):
-                ci = get_ci()
-                if ci % test_iter == 0 and get_pi() != ci:
-                    writer.add_histogram(f"{name}_output", output, global_step=ci)
-                    update_pi(ci)
-            return hook
-        fc.register_forward_hook(write_output_histogram_hook("encoder_output", config.test_iter))
 
     for epoch in range(config.start_epoch, config.num_epochs):
         # save models
