@@ -1,5 +1,7 @@
 from contextlib import nullcontext
 from typing import Optional, Tuple
+
+from matplotlib.lines import Line2D
 from dataset import DisentanglementDataset
 from evaluation.generator import LatentGenerator
 from evaluation.metrics import (
@@ -14,6 +16,8 @@ from torch.optim import Optimizer
 from torch import Tensor
 from torch.cuda.amp.grad_scaler import GradScaler
 from torch.utils.tensorboard import SummaryWriter
+import matplotlib.pyplot as plt
+import numpy as np
 
 from ops import kl_divergence, reconstruction_loss
 
@@ -81,14 +85,14 @@ class VAESolver:
             if self.clip:
                 self.grad_scaler.unscale_(self.optimizer_e)
                 self.grad_scaler.unscale_(self.optimizer_d)
-                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
             self.grad_scaler.step(self.optimizer_e)
             self.grad_scaler.step(self.optimizer_d)
             self.grad_scaler.update()
         else:
             loss.backward()
             if self.clip:
-                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
             self.optimizer_e.step()
             self.optimizer_d.step()
 
@@ -105,6 +109,7 @@ class VAESolver:
             self.write_gradient_norm(cur_iter)
             self._write_images_helper(real_batch, cur_iter)
             self.write_disentanglemnt_scores(cur_iter)
+            self.writer.flush()
         
         return loss
 
@@ -121,7 +126,7 @@ class VAESolver:
                 _, _, _, rec_det = self.model(batch, deterministic=True)
                 max_imgs = min(batch.size(0), 16)
                 self.writer.add_images(
-                    f"image_{cur_iter}",
+                    "reconstructions",
                     torch.cat(
                         [
                             batch[:max_imgs],
@@ -170,3 +175,39 @@ class VAESolver:
             write_mig_score(self.writer, cur_iter, **score_kwargs)
             write_mod_expl_score(self.writer, cur_iter, **score_kwargs)
             print("Finished calculating disentanglemnt scores!")
+    
+    def write_gradient_flow(self, cur_iter, named_parameters):
+        '''Plots the gradients flowing through different layers in the net during training.
+        Can be used for checking for possible gradient vanishing / exploding problems.
+
+        From: https://discuss.pytorch.org/t/check-gradient-flow-in-network/15063/10
+        
+        Usage: Plug this function in Trainer class after loss.backwards() as 
+        "write_gradient_flow(cur_iter, self.model.named_parameters())" to visualize the gradient flow'''
+        if self.writer is None or cur_iter % self.test_iter != 0:
+            return
+
+        ave_grads = []
+        max_grads= []
+        layers = []
+        for n, p in named_parameters:
+            if(p.requires_grad) and ("bias" not in n):
+                layers.append(n)
+                ave_grads.append(p.grad.cpu().abs().mean())
+                max_grads.append(p.grad.cpu().abs().max())
+        plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
+        plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
+        plt.hlines(0, 0, len(ave_grads)+1, lw=2, color="k" )
+        plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
+        plt.xlim(left=0, right=len(ave_grads))
+        plt.ylim(bottom = -0.001, top=0.02) # zoom in on the lower gradient regions
+        plt.xlabel("Layers")
+        plt.ylabel("average gradient")
+        plt.title("Gradient flow")
+        plt.grid(True)
+        plt.legend([Line2D([0], [0], color="c", lw=4),
+                    Line2D([0], [0], color="b", lw=4),
+                    Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
+        assert len(plt.get_fignums()) != 0
+        fig = plt.gcf()
+        self.writer.add_figure("gradient_flow", fig, global_step=cur_iter, close=True)

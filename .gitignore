@@ -8,6 +8,9 @@ runs/*
 .idea
 .vscode
 configs
+*.npy
+*.npz
+debug.ipynb
 
 ### Linux ###
 *~

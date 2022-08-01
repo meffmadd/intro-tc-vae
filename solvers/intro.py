@@ -1,5 +1,7 @@
 from contextlib import nullcontext
 from typing import Optional, Tuple
+
+import numpy as np
 from dataset import DisentanglementDataset
 from models import SoftIntroVAE
 from solvers.vae import VAESolver
@@ -10,7 +12,7 @@ from torch.cuda.amp.grad_scaler import GradScaler
 from torch.utils.tensorboard import SummaryWriter
 
 from ops import kl_divergence, reconstruction_loss, reparameterize
-from utils import check_non_finite_gradints
+from utils import SingletonWriter, check_non_finite_gradints
 
 
 class IntroSolver(VAESolver):
@@ -76,6 +78,7 @@ class IntroSolver(VAESolver):
             loss_rec = reconstruction_loss(
                 real_batch, rec, loss_type=self.recon_loss_type, reduction="mean"
             )
+            SingletonWriter().writer = None # TODO: remove after debug
 
             lossE_real_kl = self.compute_kl_loss(z, real_mu, real_logvar)
 
@@ -83,7 +86,32 @@ class IntroSolver(VAESolver):
             fake_mu, fake_logvar, z_fake, rec_fake = self.model(fake.detach())
 
             kl_rec = self.compute_kl_loss(z, rec_mu, rec_logvar, reduce="none") # shape: (batch_size,)
+
+            SingletonWriter().writer = self.writer # TODO: remove after debug
             kl_fake = self.compute_kl_loss(z, fake_mu, fake_logvar, reduce="none") # shape: (batch_size,)
+
+            if self.writer:
+                self.writer.add_scalars(
+                    "fake_mu",
+                    {"min": fake_mu.min().item(), "max": fake_mu.max().item()},
+                    global_step=cur_iter,
+                )
+                self.writer.add_scalars(
+                    "fake_logvar",
+                    {"min": fake_logvar.min().item(), "max": fake_logvar.max().item()},
+                    global_step=cur_iter,
+                )
+                self.writer.add_scalars(
+                    "kl_fake",
+                    {"min": kl_fake.min().item(), "max": kl_fake.max().item()},
+                    global_step=cur_iter,
+                )
+                self.writer.add_scalars(
+                    "lossE_real_kl",
+                    {"min": lossE_real_kl.min().item(), "max": lossE_real_kl.max().item()},
+                    global_step=cur_iter,
+                )
+                self.writer.flush()
 
             loss_rec_rec_e = reconstruction_loss(
                 rec, rec_rec, loss_type=self.recon_loss_type, reduction="none"
@@ -115,6 +143,14 @@ class IntroSolver(VAESolver):
                 .mean()
             )
 
+            if self.writer:
+                self.writer.add_scalars(
+                    "expelbo_fake",
+                    {"min": expelbo_fake.min().item(), "max": expelbo_fake.max().item()},
+                    global_step=cur_iter,
+                )
+                self.writer.flush()
+
             lossE_fake = 0.25 * (expelbo_rec + expelbo_fake)
             lossE_real = self.scale * (
                 self.beta_rec * loss_rec + self.beta_kl * lossE_real_kl
@@ -128,13 +164,21 @@ class IntroSolver(VAESolver):
             self.grad_scaler.scale(lossE).backward()
             if self.clip:
                 self.grad_scaler.unscale_(self.optimizer_e)
-                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
             self.grad_scaler.step(self.optimizer_e)
             self.grad_scaler.update()
         else:
-            lossE.backward()
+            try:
+                lossE.backward()
+            except RuntimeError:
+                np.savez("kl_fake_input", z=z.detach().cpu().numpy(), fake_mu=fake_mu.detach().cpu().numpy(), fake_logvar=fake_logvar.detach().cpu().numpy())
+                raise
+
+            if self.writer:
+                self.writer.add_scalar("encoder_max_grad", torch.cat([torch.abs(p.grad).view(-1) for p in self.model.parameters() if p.grad is not None]).max(), cur_iter)
+                self.writer.flush()
             if self.clip:
-                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
             self.optimizer_e.step()
 
         # ========= Update D ==================
@@ -187,13 +231,13 @@ class IntroSolver(VAESolver):
             self.grad_scaler.scale(lossD).backward()
             if self.clip:
                 self.grad_scaler.unscale_(self.optimizer_d)
-                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
             self.grad_scaler.step(self.optimizer_d)
             self.grad_scaler.update()
         else:
             lossD.backward()
             if self.clip:
-                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
             self.optimizer_d.step()
 
         if torch.isnan(lossD) or torch.isnan(lossE):
@@ -210,8 +254,12 @@ class IntroSolver(VAESolver):
                 ),
                 diff_kl=dif_kl.item(),
             )
+            self.write_gradient_flow(cur_iter, self.model.named_parameters())
+            self.writer.add_scalar("lossE", lossE, global_step=cur_iter)
+            self.writer.add_scalar("lossD", lossD, global_step=cur_iter)
             self.write_gradient_norm(cur_iter)
             self.write_images(real_batch, fake, cur_iter)
             self.write_disentanglemnt_scores(cur_iter)
+            self.writer.flush()
         
         return lossE, lossD

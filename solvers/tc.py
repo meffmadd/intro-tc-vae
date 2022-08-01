@@ -54,8 +54,11 @@ class TCSovler(VAESolver):
             logqz_prodmarginals = log_prod_qz_i(z, mu, logvar)
             logqz = log_qz(z, mu, logvar)
 
+            # I[z;x] = KL[q(z,x)||q(x)q(z)] = E_x[KL[q(z|x)||q(z)]]
             mi_loss = logqz_condx - logqz
+            # TC[z] = KL[q(z)||\prod_i z_i]
             tc_loss = logqz - logqz_prodmarginals
+            # kl_loss is KL[q(z)||p(z)] instead of usual KL[q(z|x)||p(z))]
             kl_loss = logqz_prodmarginals - logpz
             
             if reduce == "mean":
@@ -91,14 +94,14 @@ class TCSovler(VAESolver):
             if self.clip:
                 self.grad_scaler.unscale_(self.optimizer_e)
                 self.grad_scaler.unscale_(self.optimizer_d)
-                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
             self.grad_scaler.step(self.optimizer_e)
             self.grad_scaler.step(self.optimizer_d)
             self.grad_scaler.update()
         else:
             loss.backward()
             if self.clip:
-                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.clip)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
             self.optimizer_e.step()
             self.optimizer_d.step()
 
@@ -115,5 +118,6 @@ class TCSovler(VAESolver):
             self.write_gradient_norm(cur_iter)
             self._write_images_helper(real_batch, cur_iter)
             self.write_disentanglemnt_scores(cur_iter)
+            self.writer.flush()
         
         return loss

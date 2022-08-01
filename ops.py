@@ -4,18 +4,26 @@ import torch.nn.functional as F
 import numpy as np
 import math
 
+from utils import SingletonWriter
+
 # https://github.com/carbonati/variational-zoo/blob/3a81967c3828fcdc5c0248e16e53533e931e00d7/vzoo/losses/ops.py#L30
+# https://github.com/YannDubs/disentangling-vae/blob/7b8285baa19d591cf34c652049884aca5d8acbca/disvae/utils/math.py#L34
+# https://github.com/julian-carpenter/beta-TCVAE/blob/572d9e31993ccce47ef7a072a49c027c9c944e5e/nn/losses.py#L79
+# https://github.com/clementchadebec/benchmark_VAE/blob/d8a3c21594f77182655d241a8632bbe772f67e3e/src/pythae/models/beta_tc_vae/beta_tc_vae_model.py#L177
+# https://github.com/rtqichen/beta-tcvae/blob/1a3577dbb14642b9ac27010928d12132d0c0fb91/lib/dist.py#L50
+# https://github.com/nmichlo/disent/blob/67ed5b92aeef247f1c0cb3b8597e9fd95e69e817/disent/frameworks/vae/_unsupervised__betatcvae.py#L115
 
 
-def gaussian_log_density(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
+def gaussian_log_density_torch(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
     """Computes the log density of a Gaussian. This is just the simplified log of the PDF of a normal distribution."""
-    log2pi = torch.log(Tensor([2.0 * math.pi])).to(x.device)
-    inv_var = torch.exp(-logvar)
-    delta = x - mu
-    return -0.5 * (torch.square(delta) * inv_var + logvar + log2pi)
+    var = torch.exp(logvar)
+    log_prob = -F.gaussian_nll_loss(x, mu, var, reduction="none", eps=1e-3, full=True)
+    # only clamp return value (don't use large eps) since we may still have small (x-mu)/var
+    # semantically log probabilities of -50 or -5000 make no difference (still 0)
+    return torch.clamp(log_prob, min=-50)
 
 
-def batch_gaussian_density(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
+def batch_gaussian_density_torch(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
     """Computes the gaussian log density between each sample in the batch.
     Takes in a 2D matrices of shape (batch_size, latent_dim) and returns a
     3D matrix of shape (batch_size, batch_size, latent_dim).
@@ -35,36 +43,81 @@ def batch_gaussian_density(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
     Tensor
         Gaussian log density matrix between each sample of shape (batch_size, batch_size, latent_dim)
     """
-    batch_log_qz = gaussian_log_density(
+    batch_log_qz = gaussian_log_density_torch(
         x=torch.unsqueeze(x, 1),
         mu=torch.unsqueeze(mu, 0),
-        logvar=torch.unsqueeze(logvar, 0),
+        logvar=torch.unsqueeze(logvar, 1),
     )
     return batch_log_qz
 
 
+# references:
+# https://github.com/carbonati/variational-zoo/blob/3a81967c3828fcdc5c0248e16e53533e931e00d7/vzoo/losses/ops.py#L59
+# https://github.com/clementchadebec/benchmark_VAE/blob/d8a3c21594f77182655d241a8632bbe772f67e3e/src/pythae/models/beta_tc_vae/beta_tc_vae_model.py#L142
+# https://github.com/rtqichen/beta-tcvae/blob/1a3577dbb14642b9ac27010928d12132d0c0fb91/vae_quant.py#L227
+# https://github.com/nmichlo/disent/blob/67ed5b92aeef247f1c0cb3b8597e9fd95e69e817/disent/frameworks/vae/_unsupervised__betatcvae.py#L93
+# https://github.com/julian-carpenter/beta-TCVAE/blob/572d9e31993ccce47ef7a072a49c027c9c944e5e/nn/losses.py#L93
+
+# TODO: this causes NaN in backwards pass (logsumexp)
 def log_qz(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
     """Computes log(q(z))"""
-    log_prob_qz = batch_gaussian_density(x, mu, logvar)
+    log_prob_qz = batch_gaussian_density_torch(x, mu, logvar)  # log prob between (-inf, 0]
+
+    assert not torch.isnan(log_prob_qz).any()  # TODO: remove after debugging
+    assert not torch.isinf(log_prob_qz).any()  # TODO: remove after debugging
+    writer = SingletonWriter().writer
+    cur_iter = SingletonWriter().cur_iter
+    if SingletonWriter().write_test_iter:
+        writer.add_histogram("log_prob_qz", log_prob_qz, global_step=cur_iter)
+    if writer:
+        writer.add_scalars(
+            "log_prob_qz",
+            {"min": log_prob_qz.min().item(), "max": log_prob_qz.max().item()},
+            global_step=cur_iter,
+        )
+        writer.flush()
+
+    # interesting: https://github.com/YannDubs/disentangling-vae/blob/7b8285baa19d591cf34c652049884aca5d8acbca/disvae/evaluate.py#L288
     log_qz = torch.logsumexp(
         torch.sum(log_prob_qz, dim=2),
         dim=1,
     )
+    assert not torch.isnan(log_qz).any()  # TODO: remove after debugging
+    assert not torch.isinf(log_qz).any()  # TODO: remove after debugging
+    # TODO: log values
+    if writer:
+        writer.add_scalars(
+            "log_qz",
+            {"min": log_qz.min().item(), "max": log_qz.max().item()},
+            global_step=cur_iter,
+        )
     return log_qz
 
 
 def log_prod_qz_i(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
-    log_prob_qz = batch_gaussian_density(x, mu, logvar)
+    log_prob_qz = batch_gaussian_density_torch(x, mu, logvar)
     log_prod_qzi = torch.sum(
         torch.logsumexp(log_prob_qz, dim=1),
         dim=1,
     )
+
+    writer = SingletonWriter().writer
+    cur_iter = SingletonWriter().cur_iter
+    assert not torch.isnan(log_prod_qzi).any()  # TODO: remove after debugging
+    # TODO: log values
+    if writer:
+        writer.add_scalars(
+            "log_prod_qzi",
+            {"min": log_prod_qzi.min().item(), "max": log_prod_qzi.max().item()},
+            global_step=cur_iter,
+        )
+
     return log_prod_qzi
 
 
 def log_qz_cond_x(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
     log_qz_cond_x = torch.sum(
-        gaussian_log_density(x, mu, logvar),
+        gaussian_log_density_torch(x, mu, logvar),
         dim=1,
     )
     return log_qz_cond_x
@@ -72,7 +125,7 @@ def log_qz_cond_x(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
 
 def log_pz(x: Tensor) -> Tensor:
     log_pz = torch.sum(
-        gaussian_log_density(
+        gaussian_log_density_torch(
             x,
             torch.zeros(x.shape, device=x.device),
             torch.zeros(x.shape, device=x.device),
@@ -184,6 +237,7 @@ def reconstruction_loss(x, recon_x, loss_type="mse", reduction="sum") -> Tensor:
     if reduction not in ["sum", "mean", "none"]:
         raise NotImplementedError
     recon_x = recon_x.view(recon_x.size(0), -1)
+    assert not torch.isnan(recon_x).any()  # TODO: remove after debugging
     x = x.view(x.size(0), -1).detach()
     if loss_type == "mse":
         recon_error = F.mse_loss(recon_x, x, reduction=reduction)

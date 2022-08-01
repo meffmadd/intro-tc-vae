@@ -1,6 +1,7 @@
 import torch
 from torchvision.utils import make_grid
 import pickle
+from torch.utils.tensorboard import SummaryWriter
 
 import os
 
@@ -41,3 +42,18 @@ def check_non_finite_gradints(model):
             mask = torch.isfinite(param.grad)
             if not mask.all():
                 print("Non-finite gradients in ", name, (~torch.isfinite(param.grad)).sum().cpu().item(), "values")
+
+
+class SingletonWriter(object):
+    writer: SummaryWriter
+    cur_iter: int
+    test_iter: int
+
+    def __new__(cls):
+        if not hasattr(cls, 'instance'):
+            cls.instance = super(SingletonWriter, cls).__new__(cls)
+        return cls.instance
+    
+    @property
+    def write_test_iter(self):
+        return self.writer and self.cur_iter % self.test_iter == 0
