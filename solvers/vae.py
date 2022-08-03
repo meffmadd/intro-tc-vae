@@ -161,6 +161,9 @@ class VAESolver:
             and isinstance(self.dataset, DisentanglementDataset)
             and cur_iter % self.test_iter == 0
         ):
+            if training := self.model.training:
+                self.model.eval()
+                
             if len(self.dataset) < num_samples:
                 num_samples = len(self.dataset) // 2
             score_kwargs = dict(
@@ -174,6 +177,9 @@ class VAESolver:
             # write_dci_score(self.writer, cur_iter, **score_kwargs)
             write_mig_score(self.writer, cur_iter, **score_kwargs)
             write_mod_expl_score(self.writer, cur_iter, **score_kwargs)
+
+            if training:
+                self.model.train()
             print("Finished calculating disentanglemnt scores!")
     
     def write_gradient_flow(self, cur_iter, named_parameters):

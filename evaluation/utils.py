@@ -239,8 +239,8 @@ def compute_completeness(P: np.ndarray) -> float:
 
 
 # MIG utils
-def descretize(x, bins):
-    """Descretizes each column of x using a histogram function."""
+def discretize(x, bins):
+    """Discretizes each column of x using a histogram function."""
     if len(x.shape) == 1:
         x = np.expand_dims(x, axis=0)
     descretized = np.zeros(x.shape)
@@ -266,7 +266,7 @@ def calculate_entropy(v):
     d = v.shape[1]
     H = np.zeros(d)
     for j in range(d):
-        H[j] = ops.entropy(v[:, j])
+        H[j] = mutual_info_score(v[:, j], v[:, j])
     return H
 
 

@@ -9,11 +9,12 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 def write_bvae_score(writer: SummaryWriter, cur_iter: int, **score_kwargs):
-    bvae_score = compute_bvae_score(
-        **score_kwargs,
-        params=dict(scale=True),
+    bvae_score, bvae_score_scaled = compute_bvae_score(**score_kwargs)
+    writer.add_scalars(
+        "bvae_score",
+        dict(score=bvae_score, scaled=bvae_score_scaled),
+        global_step=cur_iter,
     )
-    writer.add_scalar("bvae_score", bvae_score, global_step=cur_iter)
 
 
 def compute_bvae_score(
@@ -21,8 +22,7 @@ def compute_bvae_score(
     model: SoftIntroVAE,
     num_samples: int = 10000,
     batch_size: int = 64,
-    params=None,
-):
+) -> Tuple[float, float]:
     """beta-VAE Disentanglement Metric
     Section 3 of "beta-VAE: Learning Basic Visual Concepts with a Constrained
     Variational Framework" (https://openreview.net/references/pdf?id=Sy2fzU9gl).
@@ -50,16 +50,13 @@ def compute_bvae_score(
         Number of latent representations to generate.
     batch_size : int (default=64)
         Number of samples to generate per batch.
-    params : dict (default=None)
-        bvae_lr_params :
-        scale :
     Returns
     -------
     bvae_score : float
         beta-VAE disentanglement score.
+    bvae_score_scaled : float
+        beta-VAE disentanglement score with scaling of data.
     """
-    if training := model.training:
-        model.eval()
     Z_diff_train, y_train = utils.generate_factor_change(
         latent_generator,
         model,
@@ -74,11 +71,12 @@ def compute_bvae_score(
     )
 
     bvae_score = utils.compute_factor_change_accuracy(
-        Z_diff_train, y_train, Z_diff_test, y_test, params=params
+        Z_diff_train, y_train, Z_diff_test, y_test, params=dict(scale=False)
     )
-    if training:
-        model.train()
-    return bvae_score
+    bvae_score_scaled = utils.compute_factor_change_accuracy(
+        Z_diff_train, y_train, Z_diff_test, y_test, params=dict(scale=True)
+    )
+    return bvae_score, bvae_score_scaled
 
 
 def write_dci_score(writer: SummaryWriter, cur_iter: int, **score_kwargs):
@@ -200,23 +198,26 @@ def compute_mig_score(
     params = params or {}
     bins = params.get("bins", 10)
 
-    z, v = utils.generate_factor_representations(
+    mu, v = utils.generate_factor_representations(
         latent_generator,
         model,
         num_samples=num_samples,
         batch_size=batch_size,
     )
-    z_binned = utils.descretize(z, bins=bins)
+    mu_binned = utils.discretize(mu, bins=bins)
 
     H = utils.calculate_entropy(v)
-    I = utils.calculate_mutual_info(z_binned, v)
+    I = utils.calculate_mutual_info(mu_binned, v)
     I_sorted = np.sort(I, axis=0)[::-1]
 
     return np.mean((I_sorted[0] - I_sorted[1]) / H)
 
 
 def write_mod_expl_score(writer: SummaryWriter, cur_iter: int, **score_kwargs):
-    modularity_score, explicitness_score = compute_mod_expl_score(**score_kwargs, params=dict(explicitness_lr_params={"solver": "saga", "max_iter": 300}))
+    modularity_score, explicitness_score = compute_mod_expl_score(
+        **score_kwargs,
+        params=dict(explicitness_lr_params={"solver": "saga", "max_iter": 300}),
+    )
     writer.add_scalars(
         "mod_expl",
         dict(
@@ -283,7 +284,7 @@ def compute_mod_expl_score(
         batch_size=batch_size,
     )
 
-    x_train_binned = utils.descretize(x_train, bins=bins)
+    x_train_binned = utils.discretize(x_train, bins=bins)
     MI = utils.calculate_mutual_info(x_train_binned, y_train)
 
     scl = StandardScaler()
