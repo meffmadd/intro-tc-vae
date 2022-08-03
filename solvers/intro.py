@@ -85,29 +85,6 @@ class IntroSolver(VAESolver):
             kl_rec = self.compute_kl_loss(z, rec_mu, rec_logvar, reduce="none") # shape: (batch_size,)
             kl_fake = self.compute_kl_loss(z, fake_mu, fake_logvar, reduce="none") # shape: (batch_size,)
 
-            if self.writer:
-                self.writer.add_scalars(
-                    "fake_mu",
-                    {"min": fake_mu.min().item(), "max": fake_mu.max().item()},
-                    global_step=cur_iter,
-                )
-                self.writer.add_scalars(
-                    "fake_logvar",
-                    {"min": fake_logvar.min().item(), "max": fake_logvar.max().item()},
-                    global_step=cur_iter,
-                )
-                self.writer.add_scalars(
-                    "kl_fake",
-                    {"min": kl_fake.min().item(), "max": kl_fake.max().item()},
-                    global_step=cur_iter,
-                )
-                self.writer.add_scalars(
-                    "lossE_real_kl",
-                    {"min": lossE_real_kl.min().item(), "max": lossE_real_kl.max().item()},
-                    global_step=cur_iter,
-                )
-                self.writer.flush()
-
             loss_rec_rec_e = reconstruction_loss(
                 rec, rec_rec, loss_type=self.recon_loss_type, reduction="none"
             ) # shape: (batch_size,)
