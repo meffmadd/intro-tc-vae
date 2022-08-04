@@ -48,7 +48,7 @@ class IntroSolver(VAESolver):
             grad_scaler,
             writer,
             test_iter,
-            clip
+            clip,
         )
         self.beta_neg = beta_neg
         self.gamma_r = gamma_r
@@ -82,17 +82,21 @@ class IntroSolver(VAESolver):
             rec_mu, rec_logvar, z_rec, rec_rec = self.model(rec.detach())
             fake_mu, fake_logvar, z_fake, rec_fake = self.model(fake.detach())
 
-            kl_rec = self.compute_kl_loss(z, rec_mu, rec_logvar, reduce="none") # shape: (batch_size,)
-            kl_fake = self.compute_kl_loss(z, fake_mu, fake_logvar, reduce="none") # shape: (batch_size,)
+            kl_rec = self.compute_kl_loss(
+                z, rec_mu, rec_logvar, reduce="none"
+            )  # shape: (batch_size,)
+            kl_fake = self.compute_kl_loss(
+                z, fake_mu, fake_logvar, reduce="none"
+            )  # shape: (batch_size,)
 
             loss_rec_rec_e = reconstruction_loss(
                 rec, rec_rec, loss_type=self.recon_loss_type, reduction="none"
-            ) # shape: (batch_size,)
+            )  # shape: (batch_size,)
             while len(loss_rec_rec_e.shape) > 1:
                 loss_rec_rec_e = loss_rec_rec_e.sum(-1)
             loss_rec_fake_e = reconstruction_loss(
                 fake, rec_fake, loss_type=self.recon_loss_type, reduction="none"
-            ) # shape: (batch_size,)
+            )  # shape: (batch_size,)
             while len(loss_rec_fake_e.shape) > 1:
                 loss_rec_fake_e = loss_rec_fake_e.sum(-1)
 
@@ -135,7 +139,17 @@ class IntroSolver(VAESolver):
             lossE.backward()
 
             if self.writer:
-                self.writer.add_scalar("encoder_max_grad", torch.cat([torch.abs(p.grad).view(-1) for p in self.model.parameters() if p.grad is not None]).max(), cur_iter)
+                self.writer.add_scalar(
+                    "encoder_max_grad",
+                    torch.cat(
+                        [
+                            torch.abs(p.grad).view(-1)
+                            for p in self.model.parameters()
+                            if p.grad is not None
+                        ]
+                    ).max(),
+                    cur_iter,
+                )
                 self.writer.flush()
 
             if self.clip:
@@ -215,6 +229,15 @@ class IntroSolver(VAESolver):
                 ),
                 diff_kl=dif_kl.item(),
             )
+            self.writer.add_scalars(
+                "losses_unscaled",
+                dict(
+                    r_loss=loss_rec.data.cpu().item(),
+                    kl=lossE_real_kl.data.cpu().item(),
+                    expelbo_f=expelbo_fake.cpu().item(),
+                ),
+                global_step=cur_iter
+            )
             self.write_gradient_flow(cur_iter, self.model.named_parameters())
             self.writer.add_scalar("lossE", lossE, global_step=cur_iter)
             self.writer.add_scalar("lossD", lossD, global_step=cur_iter)
@@ -222,5 +245,5 @@ class IntroSolver(VAESolver):
             self.write_images(real_batch, fake, cur_iter)
             self.write_disentanglemnt_scores(cur_iter)
             self.writer.flush()
-        
+
         return lossE, lossD
