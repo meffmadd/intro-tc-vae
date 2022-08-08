@@ -224,11 +224,6 @@ def train_soft_intro_vae(config: Config):
                 SingletonWriter().cur_iter = cur_iter
         pbar.close()
 
-        if writer:
-            for name, weight in model.named_parameters():
-                writer.add_histogram(name, weight, global_step=cur_iter)
-                writer.add_histogram(f'{name}.grad',weight.grad, global_step=cur_iter)
-
         if config.profile:
             print(prof.key_averages().table(sort_by="self_cpu_time_total"))
             break
