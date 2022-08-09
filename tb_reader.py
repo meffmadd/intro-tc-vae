@@ -19,8 +19,9 @@ class TagConverter:
                 event_accumulator.COMPRESSED_HISTOGRAMS: 500,
                 event_accumulator.IMAGES: 4,
                 event_accumulator.AUDIO: 4,
-                event_accumulator.SCALARS: 0,
+                event_accumulator.SCALARS: 10000,
                 event_accumulator.HISTOGRAMS: 1,
+                event_accumulator.TENSORS: 10,
             },
         )
         self.ea.Reload()
@@ -74,23 +75,35 @@ class TensorboardReader:
 
     @property
     def bvae_score(self) -> pd.DataFrame:
-        self.read_score("bvae_score_score").get_df("bvae_score")
+        return self.read_score("bvae_score_score").get_df("bvae_score")
     
     @property
     def bvae_score_scaled(self) -> pd.DataFrame:
-        self.read_score("bvae_score_scaled").get_df("bvae_score")
+        return self.read_score("bvae_score_scaled").get_df("bvae_score")
     
     @property
     def explicitness_score(self) -> pd.DataFrame:
-        self.read_score("mod_expl_explicitness_score").get_df("mod_expl")
+        return self.read_score("mod_expl_explicitness_score").get_df("mod_expl")
 
     @property
     def modularity_score(self) -> pd.DataFrame:
-        self.read_score("mod_expl_modularity_score").get_df("mod_expl")
+        return self.read_score("mod_expl_modularity_score").get_df("mod_expl")
     
     @property
     def mig_score(self) -> pd.DataFrame:
-        self.base_event.get_df("mig_score")
+        return self.base_event.get_df("mig_score")
+    
+    @property
+    def dci_completeness_score(self) -> pd.DataFrame:
+        return self.read_score("dci_dci_completeness_score").get_df("dci")
+    
+    @property
+    def dci_disentanglement_score(self) -> pd.DataFrame:
+        return self.read_score("dci_dci_disentanglement_score").get_df("dci")
+
+    @property
+    def dci_informativeness_score(self) -> pd.DataFrame:
+        return self.read_score("dci_dci_informativeness_score").get_df("dci")
 
     ### --------------
     ### LOSSES 
@@ -114,23 +127,23 @@ class TensorboardReader:
 
     @property
     def expelbo_f_loss_scaled(self) -> pd.DataFrame:
-        self.read_score("losses_expelbo_f").get_df("losses")
+        return self.read_score("losses_expelbo_f").get_df("losses")
 
     @property
     def expelbo_f_loss(self) -> pd.DataFrame:
-        self.read_score("losses_unscaled_expelbo_f").get_df("losses_unscaled")
+        return self.read_score("losses_unscaled_expelbo_f").get_df("losses_unscaled")
     
     @property
     def diff_kl(self) -> pd.DataFrame:
-        self.base_event.get_df("diff_kl")
+        return self.base_event.get_df("diff_kl")
     
     @property
     def loss_e(self) -> pd.DataFrame:
-        self.base_event.get_df("lossE")
+        return self.base_event.get_df("lossE")
 
     @property
     def loss_d(self) -> pd.DataFrame:
-        self.base_event.get_df("lossD")
+        return self.base_event.get_df("lossD")
     
     
 

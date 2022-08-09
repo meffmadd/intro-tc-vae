@@ -200,6 +200,9 @@ def fit_info_clf(
     train_errors = []
     test_errors = []
 
+    y_train = y_train.astype(int)
+    y_test = y_test.astype(int)
+
     for i in range(K):
         y_train_i = y_train[:, i]
         y_test_i = y_test[:, i]

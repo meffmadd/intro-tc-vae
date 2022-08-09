@@ -174,7 +174,7 @@ class VAESolver:
             )
             print("Calculating disentanglment scores...")
             write_bvae_score(self.writer, cur_iter, **score_kwargs)
-            # write_dci_score(self.writer, cur_iter, **score_kwargs)
+            write_dci_score(self.writer, cur_iter, **score_kwargs)
             write_mig_score(self.writer, cur_iter, **score_kwargs)
             write_mod_expl_score(self.writer, cur_iter, **score_kwargs)
 

@@ -83,15 +83,21 @@ def write_dci_score(writer: SummaryWriter, cur_iter: int, **score_kwargs):
     dci_info_score, dci_comp_score, dci_dis_score = compute_dci_score(
         **score_kwargs,
         params=dict(
-            informativeness_method="xgb", informativeness_params={"n_jobs": -1}
+            informativeness_method="xgb",
+            informativeness_params=dict(
+                tree_method="gpu_hist",
+                gpu_id=0,
+                eval_metric="mlogloss",
+                use_label_encoder=False,
+            ),
         ),
     )
     writer.add_scalars(
         "dci",
         dict(
-            dci_info_score=dci_info_score,
-            dci_comp_score=dci_comp_score,
-            dci_dis_score=dci_dis_score,
+            dci_informativeness_score=dci_info_score,
+            dci_completeness_score=dci_comp_score,
+            dci_disentanglement_score=dci_dis_score,
         ),
         global_step=cur_iter,
     )
