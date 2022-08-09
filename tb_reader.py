@@ -4,6 +4,7 @@ import pandas as pd
 from pathlib import Path
 from typing import List
 from tensorboard.backend.event_processing import event_accumulator
+from tensorboard.plugins.hparams.plugin_data_pb2 import HParamsPluginData
 
 
 class TagConverter:
@@ -68,6 +69,22 @@ class TensorboardReader:
     @property
     def exists(self):
         return self.run_path.exists()
+    
+    # from: https://github.com/j3soon/tbparse/blob/0a6368183b1fa3e30c4c0fd88eebb1edc10a8c5a/tbparse/summary_reader.py#L826
+    @property
+    def hparams(self):
+        ssi_tag = "_hparams_/session_start_info"
+        hparam_base_dir = self.match_name(self.run_path, "16*") # 16* because run_name is str(time.time() in SummaryWriter)
+        hparam_event_score = self.read_score(hparam_base_dir, events_file=self.match_name(self.run_path / hparam_base_dir, "events.out*"))
+        hparam_event_ea = hparam_event_score.ea
+        hparam_content = hparam_event_ea.PluginTagToContent("hparams")
+        data = hparam_content[ssi_tag]
+        plugin_data: HParamsPluginData = HParamsPluginData.FromString(data)
+        hparam_dict = dict(plugin_data.session_start_info.hparams)
+        metric_dict = {}
+        for tag in hparam_event_score.scalar_tags:
+            metric_dict[tag] = hparam_event_score.get_df("lossE")["value"][0]
+        return hparam_dict, metric_dict
 
     ### --------------
     ### SCORES 
