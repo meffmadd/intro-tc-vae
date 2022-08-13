@@ -1,3 +1,4 @@
+from typing import Union
 import torch
 from torchvision.utils import make_grid
 import pickle
@@ -43,6 +44,20 @@ def check_non_finite_gradints(model):
             if not mask.all():
                 print("Non-finite gradients in ", name, (~torch.isfinite(param.grad)).sum().cpu().item(), "values")
 
+
+class LossDict(dict):
+    def __add__(self, other: "LossDict") -> "LossDict":
+        new = LossDict()
+        keys = sorted(set(self.keys()) | set(other.keys()))
+        for k in keys:
+            new[k] = self.get(k, 0) + other.get(k, 0)
+        return new
+    
+    def __truediv__(self, value: Union[int, float]) -> "LossDict":
+        new = LossDict()
+        for k, v in self.items():
+            new[k] = v / value
+        return new
 
 class SingletonWriter(object):
     writer: SummaryWriter

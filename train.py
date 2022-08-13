@@ -181,8 +181,8 @@ def train_soft_intro_vae(config: Config):
     else:
         raise ValueError(f"Solver '{config.solver_type}' not supported!")
 
+    last_epoch_loss = LossDict()
     cur_iter = 0
-
     for epoch in range(config.start_epoch, config.num_epochs):
         # save models
         if epoch % config.save_interval == 0 and epoch > 0:
@@ -200,12 +200,8 @@ def train_soft_intro_vae(config: Config):
                 if len(batch) == 2:  # (image,label) tuple
                     batch = batch[0]
                 # Perform train step with specific loss funtion
-                postfix = {}
-                loss = solver.train_step(batch, cur_iter)
-                if isinstance(loss, tuple):
-                    postfix.update({"lossE": f"{loss[0]:.1f}", "lossD": f"{loss[1]:.1f}"})
-                else:
-                    postfix.update({"loss": f"{loss:.1f}"})
+                loss_dict = solver.train_step(batch, cur_iter)
+                postfix = loss_dict.copy()
 
                 if config.anomaly_detection:
                     with torch.no_grad():
@@ -219,6 +215,9 @@ def train_soft_intro_vae(config: Config):
                 pbar.set_postfix(postfix)
                 if config.profile and cur_iter == 50:
                     break
+
+                if epoch == config.num_epochs - 1:
+                    last_epoch_loss += loss_dict
 
                 cur_iter += 1
                 SingletonWriter().cur_iter = cur_iter
@@ -241,11 +240,8 @@ def train_soft_intro_vae(config: Config):
             model.train()
     
     if writer:
-        # TODO: change to mean of loss across last epoch
-        if isinstance(loss, tuple):
-            metric_dict = {"lossE": loss[0], "lossD": loss[1]}
-        else:
-            metric_dict = {"lossD": loss}
+        num_batches = len(train_data_loader)
+        last_epoch_loss /= num_batches
         writer.add_hparams(
             dict(
                 optimizer=config.optimizer,
@@ -262,5 +258,5 @@ def train_soft_intro_vae(config: Config):
                 arch=config.arch,
                 clip=config.clip
             ),
-            metric_dict=metric_dict
+            metric_dict=dict(last_epoch_loss)
         )

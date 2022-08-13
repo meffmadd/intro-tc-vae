@@ -60,7 +60,7 @@ class VAESolver:
     def compute_kl_loss(self, z: Optional[Tensor], mu: Tensor, logvar: Tensor, reduce: str = "mean") -> Tensor:
         return kl_divergence(logvar, mu, reduce=reduce)
 
-    def train_step(self, batch: Tensor, cur_iter: int) -> float:
+    def train_step(self, batch: Tensor, cur_iter: int) -> dict:
         if len(batch.size()) == 3:
             batch = batch.unsqueeze(0)
 
@@ -111,7 +111,12 @@ class VAESolver:
             self.write_disentanglemnt_scores(cur_iter)
             self.writer.flush()
         
-        return loss
+        return {
+            "loss_enc": loss.data.cpu().item(),
+            "loss_dec": loss.data.cpu().item(),
+            "loss_kl": loss_kl.data.cpu().item(),
+            "loss_rec": loss_rec.data.cpu().item(),
+        }
 
     def _write_images_helper(self, batch, cur_iter):
         if self.writer is not None and cur_iter % self.test_iter == 0:

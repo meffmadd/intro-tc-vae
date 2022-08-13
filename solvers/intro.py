@@ -55,7 +55,7 @@ class IntroSolver(VAESolver):
         # normalize by images size (channels * height * width)
         self.scale = 1 / (self.model.cdim * self.model.encoder.image_size**2)
 
-    def train_step(self, batch: Tensor, cur_iter: int) -> Tuple[float, float]:
+    def train_step(self, batch: Tensor, cur_iter: int) -> dict:
         if len(batch.size()) == 3:
             batch = batch.unsqueeze(0)
 
@@ -236,7 +236,7 @@ class IntroSolver(VAESolver):
                     kl=lossE_real_kl.data.cpu().item(),
                     expelbo_f=expelbo_fake.cpu().item(),
                 ),
-                global_step=cur_iter
+                global_step=cur_iter,
             )
             self.write_gradient_flow(cur_iter, self.model.named_parameters())
             self.writer.add_scalar("lossE", lossE, global_step=cur_iter)
@@ -246,4 +246,9 @@ class IntroSolver(VAESolver):
             self.write_disentanglemnt_scores(cur_iter)
             self.writer.flush()
 
-        return lossE, lossD
+        return {
+            "loss_enc": lossE.data.cpu().item(),
+            "loss_dec": lossD.data.cpu().item(),
+            "loss_kl": lossE_real_kl.data.cpu().item(),
+            "loss_rec": loss_rec.data.cpu().item(),
+        }

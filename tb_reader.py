@@ -83,7 +83,7 @@ class TensorboardReader:
         hparam_dict = dict(plugin_data.session_start_info.hparams)
         metric_dict = {}
         for tag in hparam_event_score.scalar_tags:
-            metric_dict[tag] = hparam_event_score.get_df("lossE")["value"][0]
+            metric_dict[tag] = hparam_event_score.get_df(tag)["value"][0]
         return hparam_dict, metric_dict
 
     ### --------------
