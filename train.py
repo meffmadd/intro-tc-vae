@@ -16,7 +16,7 @@ import random
 import time
 import numpy as np
 from tqdm import tqdm
-from dataset import DSprites, DSpritesSmall, UkiyoE, WrappedDataLoader
+from dataset import MPI3D, DSprites, DSpritesSmall, MPI3DSmall, UkiyoE, WrappedDataLoader
 import matplotlib.pyplot as plt
 import matplotlib
 from contextlib import nullcontext
@@ -78,6 +78,16 @@ def train_soft_intro_vae(config: Config):
         channels = [64, 128, 256, 512]
         train_set = DSpritesSmall.load_data()
         ch = 1
+    elif config.dataset == "mpi3d":
+        image_size = 64
+        channels = [64, 128, 256, 512]
+        train_set = MPI3D.load_data()
+        ch = 3
+    elif config.dataset == "mpi3d_small":
+        image_size = 64
+        channels = [64, 128, 256, 512]
+        train_set = MPI3DSmall.load_data()
+        ch = 3
     else:
         raise NotImplementedError("dataset is not supported")
 

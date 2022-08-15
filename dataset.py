@@ -40,10 +40,12 @@ class DisentanglementDataset(data.Dataset):
 class MPI3D(DisentanglementDataset):
     def __init__(self, arr, resize: int = 64) -> None:
         self.imgs = arr['images'] * 255
-        self.latents_values = np.arange(self.imgs.shape[0])
+
         self.factor_bases = np.divide(
             np.prod(self.factor_sizes), np.cumprod(self.factor_sizes)
         ).astype(int)
+        self.latents_values = np.stack(list(map(self._index_to_factor, np.arange(self.imgs.shape[0]))))
+
         self.resize = resize
         self.input_transform = transforms.Compose([transforms.ToTensor()])
     
@@ -72,7 +74,7 @@ class MPI3D(DisentanglementDataset):
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, np.ndarray]:
         img = Image.fromarray(self.imgs[index])
-        label = self._index_to_factor(self.latents_values[index])
+        label = self.latents_values[index]
         if self.resize != 64:
             img = img.resize((self.resize, self.resize), Image.BICUBIC)
         img = self.input_transform(img)
@@ -86,6 +88,45 @@ class MPI3D(DisentanglementDataset):
     def factor_sizes(self) -> List[int]:
         return [6,6,2,3,3,40,40]
 
+
+class MPI3DSmall(MPI3D):
+    def __init__(self, arr, resize: int = 64) -> None:
+        self.imgs = arr['images']
+
+        self.factor_bases = np.divide(
+            np.prod(self.orig_factor_sizes), np.cumprod(self.orig_factor_sizes)
+        ).astype(int)
+        self.latents_values = np.stack(list(map(self._index_to_factor, np.arange(self.imgs.shape[0]))))
+
+        horizontal_mask = np.in1d(self.latents_values[:,5], get_spaced_elements(self.latents_values[:,5], 4))
+        vertical_mask = np.in1d(self.latents_values[:,6], get_spaced_elements(self.latents_values[:,6], 4))
+        mask = horizontal_mask & vertical_mask
+        assert mask.sum() == np.prod(self.factor_sizes)
+
+        self.latents_values = self.latents_values[mask]
+        self.imgs = self.imgs[mask] * 255
+
+        self.resize = resize
+        self.input_transform = transforms.Compose([transforms.ToTensor()])
+
+    @property
+    def factor_sizes(self) -> List[int]:
+        return [6,6,2,3,3,4,4]
+
+    @property
+    def orig_factor_sizes(self) -> List[int]:
+        return [6,6,2,3,3,40,40]
+    
+    def _index_to_factor(self, idx: int) -> np.ndarray:
+        bucket_pos = np.floor_divide(idx, self.factor_bases)
+        return np.mod(bucket_pos, self.orig_factor_sizes)
+    
+    @classmethod
+    def load_data(cls, resize: int = 64) -> "DisentanglementDataset":
+        data_dir = os.path.expanduser("~/mpi3d-dataset")
+        data_path = os.path.join(data_dir, "mpi3d_toy.npz")
+        arr = np.load(data_path)
+        return MPI3DSmall(arr, resize=resize)
 
 class DSprites(DisentanglementDataset):
     def __init__(self, arr, resize: int = 64):
@@ -138,10 +179,11 @@ class DSpritesSmall(DSprites):
     def __init__(self, arr, resize: int = 64):
         self.latents_values = arr['latents_values']
         # reduce number of unique values for orientation, x position and y position
-        rotation_mask = np.isin(self.latents_values[:,3], get_spaced_elements(self.latents_values[:,3], 4))
-        x_mask = np.isin(self.latents_values[:,4], get_spaced_elements(self.latents_values[:,4], 3))
-        y_mask = np.isin(self.latents_values[:,5], get_spaced_elements(self.latents_values[:,5], 3))
-        mask = np.logical_and(rotation_mask, x_mask, y_mask)
+        rotation_mask = np.in1d(self.latents_values[:,3], get_spaced_elements(self.latents_values[:,3], 5)[:-1])
+        x_mask = np.in1d(self.latents_values[:,4], get_spaced_elements(self.latents_values[:,4], 10))
+        y_mask = np.in1d(self.latents_values[:,5], get_spaced_elements(self.latents_values[:,5], 10))
+        mask = rotation_mask & x_mask & y_mask
+        assert mask.sum() == np.prod(self.factor_sizes)
         self.latents_values = self.latents_values[mask]
         self.imgs = arr['imgs'][mask] * 255
         self.resize = resize
@@ -149,7 +191,7 @@ class DSpritesSmall(DSprites):
     
     @property
     def factor_sizes(self) -> List[int]:
-        return [1, 3, 6, 4, 3, 3]
+        return [1, 3, 6, 4, 10, 10]
 
     @classmethod
     def load_data(cls, resize: int = 64) -> "DisentanglementDataset":
