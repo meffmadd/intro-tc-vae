@@ -106,6 +106,15 @@ class VAESolver:
                     loss_rec=self.beta_rec * loss_rec.data.cpu().item(), loss_kl= self.beta_kl * loss_kl.data.cpu().item()
                 ),
             )
+            self.writer.add_scalars(
+                "losses_unscaled",
+                dict(
+                    r_loss=loss_rec.data.cpu().item(),
+                    kl=loss_kl.data.cpu().item(),
+                    expelbo_f=0,
+                ),
+                global_step=cur_iter,
+            )
             self.write_gradient_norm(cur_iter)
             self._write_images_helper(real_batch, cur_iter)
             self.write_disentanglemnt_scores(cur_iter)
