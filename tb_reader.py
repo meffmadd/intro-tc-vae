@@ -1,5 +1,8 @@
 import glob
 import os
+import re
+import io
+from PIL import Image
 import pandas as pd
 from pathlib import Path
 from typing import List
@@ -58,13 +61,22 @@ class TensorboardReader:
         return TagConverter(self.run_path / name, events_file=events_file)
 
     @staticmethod
-    def match_first(dir: str, glob_pattern: str) -> Path:
+    def match_first(dir: str, pattern: str, regex=False) -> Path:
         p = Path(dir).resolve()
-        return Path(glob.glob(str(p / glob_pattern))[0])
+        if regex:
+            return [x for x in p.iterdir() if re.search(pattern, x.name)][0]
+        else:
+            return Path(glob.glob(str(p / pattern))[0])
     
     @staticmethod
-    def match_name(dir: str, glob_pattern: str) -> str:
-        return TensorboardReader.match_first(dir=dir, glob_pattern=glob_pattern).name
+    def get_reader(dir: str, arch: str, beta_kl: str, beta_neg: str, beta_rec: str, gamma_r: str):
+        s = f".*_{arch}.*_{beta_kl}.*_{beta_neg}.*_{beta_rec}.*_{gamma_r}.*"
+        run = TensorboardReader.match_first(dir, s, regex=True)
+        return TensorboardReader(dir, run)
+    
+    @staticmethod
+    def match_name(dir: str, pattern: str, regex=False) -> str:
+        return TensorboardReader.match_first(dir=dir, pattern=pattern, regex=regex).name
     
     @property
     def exists(self):
@@ -162,5 +174,21 @@ class TensorboardReader:
     def loss_d(self) -> pd.DataFrame:
         return self.base_event.get_df("lossD")
     
+
+    ### --------------
+    ### IMAGES 
+    ### --------------
+
+    @property
+    def reconstrutions(self) -> List:
+        return self.base_event.ea.Images("reconstructions")
     
+    def get_reconstruction_image(self, idx: int) -> Image:
+        image = self.reconstrutions[idx]
+        buf = io.BytesIO(image.encoded_image_string)
+        return Image.open(buf)
+    
+    @property
+    def last_reconstruction(self) -> Image:
+        return self.get_reconstruction_image(-1)
 
