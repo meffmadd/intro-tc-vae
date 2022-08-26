@@ -21,79 +21,53 @@ def gaussian_log_density_torch(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
     return torch.clamp(log_prob, min=-50)
 
 
-def batch_gaussian_density_torch(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
-    """Computes the gaussian log density between each sample in the batch.
-    Takes in a 2D matrices of shape (batch_size, latent_dim) and returns a
-    3D matrix of shape (batch_size, batch_size, latent_dim).
-    Parameters
+def gaussian_log_density(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
+    normalization = torch.log(Tensor([2.0 * math.pi])).to(x.device)
+    inv_sigma = torch.exp(-logvar)
+    tmp = x - mu
+    log_prob = -0.5 * (tmp * tmp * inv_sigma + logvar + normalization)
+    return torch.clamp(log_prob, min=-50)
 
-    Parameters
-    ----------
-    x : Tensor
-        Reparameterized latent representation of shape (batch_size, latent_dim)
-    mu : Tensor
-        Mean latent tensor of shape (batch_size, latent_dim)
-    logvar : Tensor
-        Log variance latent tensor of shape (batch_size, latent_dim)
 
-    Returns
-    -------
-    Tensor
-        Gaussian log density matrix between each sample of shape (batch_size, batch_size, latent_dim)
+def total_correlation(
+    x: Tensor, mu: Tensor, logvar: Tensor, reduce: str = "mean"
+) -> Tensor:
+    """Estimate of total correlation on a batch.
+    We need to compute the expectation over a batch of: E_j [log(q(z(x_j))) -
+    log(prod_l q(z(x_j)_l))]. We ignore the constants as they do not matter
+    for the minimization. The constant should be equal to (num_latents - 1) *
+    log(batch_size * dataset_size)
+    Args:
+        z: [batch_size, num_latents]-tensor with sampled representation.
+        z_mean: [batch_size, num_latents]-tensor with mean of the encoder.
+        z_logvar: [batch_size, num_latents]-tensor with log variance of the encoder.
+    Returns:
+        Total correlation estimated on a batch.
+    
+    Reference implementation is from: https://github.com/google-research/disentanglement_lib
     """
-    batch_log_qz = gaussian_log_density_torch(
-        x=torch.unsqueeze(x, 1),
-        mu=torch.unsqueeze(mu, 0),
-        logvar=torch.unsqueeze(logvar, 1),
+    # Compute log(q(z(x_j)|x_i)) for every sample in the batch, which is a
+    # tensor of size [batch_size, batch_size, num_latents]. In the following
+    # comments, [batch_size, batch_size, num_latents] are indexed by [j, i, l].
+    log_qz_prob = gaussian_log_density(
+        x.unsqueeze(1), mu.unsqueeze(0), logvar.unsqueeze(0)
     )
-    return batch_log_qz
-
-
-# references:
-# https://github.com/carbonati/variational-zoo/blob/3a81967c3828fcdc5c0248e16e53533e931e00d7/vzoo/losses/ops.py#L59
-# https://github.com/clementchadebec/benchmark_VAE/blob/d8a3c21594f77182655d241a8632bbe772f67e3e/src/pythae/models/beta_tc_vae/beta_tc_vae_model.py#L142
-# https://github.com/rtqichen/beta-tcvae/blob/1a3577dbb14642b9ac27010928d12132d0c0fb91/vae_quant.py#L227
-# https://github.com/nmichlo/disent/blob/67ed5b92aeef247f1c0cb3b8597e9fd95e69e817/disent/frameworks/vae/_unsupervised__betatcvae.py#L93
-# https://github.com/julian-carpenter/beta-TCVAE/blob/572d9e31993ccce47ef7a072a49c027c9c944e5e/nn/losses.py#L93
-
-def log_qz(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
-    """Computes log(q(z))"""
-    log_prob_qz = batch_gaussian_density_torch(x, mu, logvar)  # log prob between (-inf, 0]
-    # interesting: https://github.com/YannDubs/disentangling-vae/blob/7b8285baa19d591cf34c652049884aca5d8acbca/disvae/evaluate.py#L288
+    # Compute log prod_l p(z(x_j)_l) = sum_l(log(sum_i(q(z(z_j)_l|x_i)))
+    # + constant) for each sample in the batch, which is a vector of size
+    # [batch_size,].
+    log_qz_product = torch.sum(
+        torch.logsumexp(log_qz_prob, dim=1, keepdim=False), dim=1, keepdim=False
+    )
+    # Compute log(q(z(x_j))) as log(sum_i(q(z(x_j)|x_i))) + constant =
+    # log(sum_i(prod_l q(z(x_j)_l|x_i))) + constant.
     log_qz = torch.logsumexp(
-        torch.sum(log_prob_qz, dim=2),
-        dim=1,
+        torch.sum(log_qz_prob, dim=2, keepdim=False), dim=1, keepdim=False
     )
-    return log_qz
 
-
-def log_prod_qz_i(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
-    log_prob_qz = batch_gaussian_density_torch(x, mu, logvar)
-    log_prod_qzi = torch.sum(
-        torch.logsumexp(log_prob_qz, dim=1),
-        dim=1,
-    )
-    return log_prod_qzi
-
-
-def log_qz_cond_x(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
-    log_qz_cond_x = torch.sum(
-        gaussian_log_density_torch(x, mu, logvar),
-        dim=1,
-    )
-    return log_qz_cond_x
-
-
-def log_pz(x: Tensor) -> Tensor:
-    log_pz = torch.sum(
-        gaussian_log_density_torch(
-            x,
-            torch.zeros(x.shape, device=x.device),
-            torch.zeros(x.shape, device=x.device),
-        ),
-        dim=1,
-    )
-    return log_pz
+    if reduce == "mean":
+        return torch.mean(log_qz - log_qz_product)
+    else:
+        return log_qz - log_qz_product
 
 
 def on_off_diag(x: Tensor):

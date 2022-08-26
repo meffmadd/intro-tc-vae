@@ -2,7 +2,7 @@ from dataset import DisentanglementDataset
 from solvers.vae import VAESolver
 from typing import Optional
 from models import SoftIntroVAE
-from ops import log_qz_cond_x, log_pz, log_prod_qz_i, log_qz, reconstruction_loss
+from ops import kl_divergence, total_correlation, reconstruction_loss
 
 from contextlib import nullcontext
 import torch
@@ -47,27 +47,9 @@ class TCSovler(VAESolver):
         )
     
     def compute_kl_loss(self, z: Optional[Tensor], mu: Tensor, logvar: Tensor, reduce: str = "mean") -> Tensor:
-            # instead of loss_kl we take the decomposed term (Equation 2)
-            logqz_condx = log_qz_cond_x(z, mu, logvar)
-            logpz = log_pz(z)
-            # with minibatch weighted sampling:
-            logqz_prodmarginals = log_prod_qz_i(z, mu, logvar)
-            logqz = log_qz(z, mu, logvar)
-
-            # I[z;x] = KL[q(z,x)||q(x)q(z)] = E_x[KL[q(z|x)||q(z)]]
-            mi_loss = logqz_condx - logqz
-            # TC[z] = KL[q(z)||\prod_i z_i]
-            tc_loss = logqz - logqz_prodmarginals
-            # kl_loss is KL[q(z)||p(z)] instead of usual KL[q(z|x)||p(z))]
-            kl_loss = logqz_prodmarginals - logpz
-            
-            if reduce == "mean":
-                mi_loss = torch.mean(mi_loss)
-                tc_loss = torch.mean(tc_loss)
-                kl_loss = torch.mean(kl_loss)
-
-            # recombine to get loss:
-            return mi_loss + self.beta_kl * tc_loss + kl_loss
+        kl_loss = kl_divergence(logvar, mu, reduce=reduce)
+        tc = (self.beta_kl - 1.) * total_correlation(z, mu, logvar, reduce=reduce)
+        return tc + kl_loss
     
     def train_step(self, batch: Tensor, cur_iter: int) -> dict:
         if len(batch.size()) == 3:

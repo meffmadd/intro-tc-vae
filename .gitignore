@@ -10,7 +10,7 @@ runs/*
 configs
 *.npy
 *.npz
-debug.ipynb
+debug*
 
 ### macOS ###
 # General
