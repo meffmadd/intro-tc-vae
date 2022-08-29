@@ -29,8 +29,32 @@ def gaussian_log_density(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
     return torch.clamp(log_prob, min=-50)
 
 
+def log_importance_weight_matrix(batch_size, dataset_size):
+    """
+    Calculates a log importance weight matrix
+    Parameters
+    ----------
+    batch_size: int
+        number of samples in a batch
+    dataset_size: int
+        number of samples in the dataset
+    """
+    N = dataset_size
+    M = batch_size - 1
+    strat_weight = (N - M) / (N * M)
+    W = torch.Tensor(batch_size, batch_size).fill_(1 / M)
+    W.view(-1)[::M+1] = 1 / N
+    W.view(-1)[1::M+1] = strat_weight
+    W[M-1, 0] = strat_weight
+    return W.log()
+
+
 def total_correlation(
-    x: Tensor, mu: Tensor, logvar: Tensor, reduce: str = "mean"
+    z: Tensor,
+    mu: Tensor,
+    logvar: Tensor,
+    dataset_size: int,
+    reduce: str = "mean",
 ) -> Tensor:
     """Estimate of total correlation on a batch.
     We need to compute the expectation over a batch of: E_j [log(q(z(x_j))) -
@@ -39,35 +63,56 @@ def total_correlation(
     log(batch_size * dataset_size)
     Args:
         z: [batch_size, num_latents]-tensor with sampled representation.
-        z_mean: [batch_size, num_latents]-tensor with mean of the encoder.
-        z_logvar: [batch_size, num_latents]-tensor with log variance of the encoder.
+        mu: [batch_size, num_latents]-tensor with mean of the encoder.
+        logvar: [batch_size, num_latents]-tensor with log variance of the encoder.
+        dataset_size: number of samples in the dataset
+        reduce: reduction type (either "none" or "mean")
     Returns:
         Total correlation estimated on a batch.
-    
+
     Reference implementation is from: https://github.com/google-research/disentanglement_lib
     """
+    batch_size = z.size(0)
+
     # Compute log(q(z(x_j)|x_i)) for every sample in the batch, which is a
     # tensor of size [batch_size, batch_size, num_latents]. In the following
     # comments, [batch_size, batch_size, num_latents] are indexed by [j, i, l].
     log_qz_prob = gaussian_log_density(
-        x.unsqueeze(1), mu.unsqueeze(0), logvar.unsqueeze(0)
+        z.unsqueeze(1), mu.unsqueeze(0), logvar.unsqueeze(0)
     )
-    # Compute log prod_l p(z(x_j)_l) = sum_l(log(sum_i(q(z(z_j)_l|x_i)))
-    # + constant) for each sample in the batch, which is a vector of size
-    # [batch_size,].
-    log_qz_product = torch.sum(
-        torch.logsumexp(log_qz_prob, dim=1, keepdim=False), dim=1, keepdim=False
-    )
-    # Compute log(q(z(x_j))) as log(sum_i(q(z(x_j)|x_i))) + constant =
-    # log(sum_i(prod_l q(z(x_j)_l|x_i))) + constant.
-    log_qz = torch.logsumexp(
-        torch.sum(log_qz_prob, dim=2, keepdim=False), dim=1, keepdim=False
-    )
+
+    log_qz_product, log_qz = minibatch_stratified_sampling(log_qz_prob, batch_size, dataset_size)
 
     if reduce == "mean":
         return torch.mean(log_qz - log_qz_product)
     else:
         return log_qz - log_qz_product
+
+
+def minibatch_weighted_sampling(log_qz_prob: Tensor, batch_size: int, dataset_size: int):
+    # Compute log prod_l p(z(x_j)_l) = sum_l(log(sum_i(q(z(z_j)_l|x_i)))
+    # + constant) for each sample in the batch, which is a vector of size
+    # [batch_size,].
+    logqz_prodmarginals = (torch.logsumexp(log_qz_prob, dim=1, keepdim=False) - math.log(batch_size * dataset_size)).sum(dim=1)
+    # Compute log(q(z(x_j))) as log(sum_i(q(z(x_j)|x_i))) + constant =
+    # log(sum_i(prod_l q(z(x_j)_l|x_i))) + constant.
+    log_qz = torch.logsumexp(log_qz_prob.sum(dim=2), dim=1, keepdim=False) - math.log(batch_size * dataset_size)
+
+    return logqz_prodmarginals, log_qz
+
+
+def minibatch_stratified_sampling(log_qz_prob: Tensor, batch_size: int, dataset_size: int):
+    log_iw_mat = log_importance_weight_matrix(batch_size, dataset_size).to(log_qz_prob.device)
+
+    # Compute log prod_l p(z(x_j)_l) = sum_l(log(sum_i(q(z(z_j)_l|x_i)))
+    # + constant) for each sample in the batch, which is a vector of size
+    # [batch_size,].
+    logqz_prodmarginals = torch.logsumexp(log_iw_mat.view(batch_size, batch_size, 1) + log_qz_prob, dim=1, keepdim=False).sum(dim=1)
+    # Compute log(q(z(x_j))) as log(sum_i(q(z(x_j)|x_i))) + constant =
+    # log(sum_i(prod_l q(z(x_j)_l|x_i))) + constant.
+    log_qz = torch.logsumexp(log_iw_mat + log_qz_prob.sum(dim=2), dim=1, keepdim=False)
+
+    return logqz_prodmarginals, log_qz
 
 
 def on_off_diag(x: Tensor):

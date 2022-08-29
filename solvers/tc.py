@@ -11,6 +11,7 @@ from torch import Tensor
 from torch.cuda.amp.grad_scaler import GradScaler
 from torch.utils.tensorboard import SummaryWriter
 
+
 class TCSovler(VAESolver):
     def __init__(
         self,
@@ -43,77 +44,24 @@ class TCSovler(VAESolver):
             grad_scaler,
             writer,
             test_iter,
-            clip
+            clip,
         )
-    
-    def compute_kl_loss(self, z: Optional[Tensor], mu: Tensor, logvar: Tensor, reduce: str = "mean") -> Tensor:
+
+    def compute_kl_loss(
+        self,
+        z: Optional[Tensor],
+        mu: Tensor,
+        logvar: Tensor,
+        reduce: str = "mean",
+        beta: float = None,
+    ) -> Tensor:
+        if beta is None:
+            beta = self.beta_kl
+
+        dataset_size = len(self.dataset)
+
         kl_loss = kl_divergence(logvar, mu, reduce=reduce)
-        tc = (self.beta_kl - 1.) * total_correlation(z, mu, logvar, reduce=reduce)
+        tc = (beta - 1.0) * total_correlation(
+            z, mu, logvar, dataset_size, reduce=reduce
+        )
         return tc + kl_loss
-    
-    def train_step(self, batch: Tensor, cur_iter: int) -> dict:
-        if len(batch.size()) == 3:
-            batch = batch.unsqueeze(0)
-
-        real_batch = batch.to(self.device)
-
-        # =========== Update E, D ================
-        with torch.cuda.amp.autocast() if self.use_amp else nullcontext():
-            real_mu, real_logvar, z, rec = self.model(real_batch)
-
-            loss_rec = reconstruction_loss(
-                real_batch, rec, loss_type=self.recon_loss_type, reduction="mean"
-            )
-
-            loss_kl = self.compute_kl_loss(z, real_mu, real_logvar)
-            loss = self.beta_rec * loss_rec + self.beta_kl * loss_kl
-
-        self.optimizer_d.zero_grad()
-        self.optimizer_e.zero_grad()
-
-        if self.use_amp:
-            self.grad_scaler.scale(loss).backward()
-            if self.clip:
-                self.grad_scaler.unscale_(self.optimizer_e)
-                self.grad_scaler.unscale_(self.optimizer_d)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
-            self.grad_scaler.step(self.optimizer_e)
-            self.grad_scaler.step(self.optimizer_d)
-            self.grad_scaler.update()
-        else:
-            loss.backward()
-            if self.clip:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
-            self.optimizer_e.step()
-            self.optimizer_d.step()
-
-        if torch.isnan(loss):
-            raise RuntimeError
-
-        if self.writer:
-            self.write_scalars(
-                cur_iter,
-                losses=dict(
-                    loss_rec=self.beta_rec * loss_rec.data.cpu().item(), loss_kl=self.beta_kl * loss_kl.data.cpu().item()
-                ),
-            )
-            self.writer.add_scalars(
-                "losses_unscaled",
-                dict(
-                    r_loss=loss_rec.data.cpu().item(),
-                    kl=loss_kl.data.cpu().item(),
-                    expelbo_f=0,
-                ),
-                global_step=cur_iter,
-            )
-            self.write_gradient_norm(cur_iter)
-            self._write_images_helper(real_batch, cur_iter)
-            self.write_disentanglemnt_scores(cur_iter)
-            self.writer.flush()
-        
-        return {
-            "loss_enc": loss.data.cpu().item(),
-            "loss_dec": loss.data.cpu().item(),
-            "loss_kl": loss_kl.data.cpu().item(),
-            "loss_rec": loss_rec.data.cpu().item(),
-        }

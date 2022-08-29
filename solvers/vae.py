@@ -56,9 +56,27 @@ class VAESolver:
         self.test_iter = test_iter
         self.clip = clip
         self.recon_loss_type = recon_loss_type
-    
-    def compute_kl_loss(self, z: Optional[Tensor], mu: Tensor, logvar: Tensor, reduce: str = "mean") -> Tensor:
-        return kl_divergence(logvar, mu, reduce=reduce)
+        # normalize by images size (channels * height * width)
+        self.scale = 1 / (self.model.cdim * self.model.encoder.image_size**2)
+
+    def compute_kl_loss(
+        self,
+        z: Optional[Tensor],
+        mu: Tensor,
+        logvar: Tensor,
+        reduce: str = "mean",
+        beta: float = None,
+    ) -> Tensor:
+        if beta is None:
+            beta = self.beta_kl
+        return beta * kl_divergence(logvar, mu, reduce=reduce)
+
+    def compute_rec_loss(
+        self, x, recon_x, reduction="sum", beta: float = None
+    ) -> Tensor:
+        if beta is None:
+            beta = self.beta_rec
+        return beta * reconstruction_loss(x, recon_x, self.recon_loss_type, reduction)
 
     def train_step(self, batch: Tensor, cur_iter: int) -> dict:
         if len(batch.size()) == 3:
@@ -70,12 +88,10 @@ class VAESolver:
         with torch.cuda.amp.autocast() if self.use_amp else nullcontext():
             real_mu, real_logvar, z, rec = self.model(real_batch)
 
-            loss_rec = reconstruction_loss(
-                real_batch, rec, loss_type=self.recon_loss_type, reduction="mean"
-            )
-            loss_kl = self.compute_kl_loss(None, real_mu, real_logvar)
+            loss_rec = self.compute_rec_loss(real_batch, rec, reduction="mean")
+            loss_kl = self.compute_kl_loss(z, real_mu, real_logvar)
 
-            loss = self.beta_rec * loss_rec + self.beta_kl * loss_kl
+            loss = self.scale * (loss_rec + loss_kl)
 
         self.optimizer_d.zero_grad()
         self.optimizer_e.zero_grad()
@@ -103,23 +119,15 @@ class VAESolver:
             self.write_scalars(
                 cur_iter,
                 losses=dict(
-                    loss_rec=self.beta_rec * loss_rec.data.cpu().item(), loss_kl= self.beta_kl * loss_kl.data.cpu().item()
+                    loss_rec=loss_rec.data.cpu().item(),
+                    loss_kl=loss_kl.data.cpu().item(),
                 ),
-            )
-            self.writer.add_scalars(
-                "losses_unscaled",
-                dict(
-                    r_loss=loss_rec.data.cpu().item(),
-                    kl=loss_kl.data.cpu().item(),
-                    expelbo_f=0,
-                ),
-                global_step=cur_iter,
             )
             self.write_gradient_norm(cur_iter)
             self._write_images_helper(real_batch, cur_iter)
             self.write_disentanglemnt_scores(cur_iter)
             self.writer.flush()
-        
+
         return {
             "loss_enc": loss.data.cpu().item(),
             "loss_dec": loss.data.cpu().item(),
@@ -130,7 +138,9 @@ class VAESolver:
     def _write_images_helper(self, batch, cur_iter):
         if self.writer is not None and cur_iter % self.test_iter == 0:
             b_size = batch.size(0)
-            noise_batch = torch.randn(size=(b_size, self.model.zdim), device=self.device)
+            noise_batch = torch.randn(
+                size=(b_size, self.model.zdim), device=self.device
+            )
             fake = self.model.sample(noise_batch).to(self.device)
             self.write_images(batch, fake, cur_iter)
 
@@ -149,15 +159,16 @@ class VAESolver:
                         ],
                         dim=0,
                     ).data.cpu(),
-                    global_step=cur_iter
+                    global_step=cur_iter,
                 )
 
     def write_gradient_norm(self, cur_iter: int):
         # if self.writer:
         parameters = self.model.encoder.fc.parameters()
-        total_norm: Tensor = torch.norm(torch.stack([torch.norm(p.grad.detach(), 2) for p in parameters]), 2)
+        total_norm: Tensor = torch.norm(
+            torch.stack([torch.norm(p.grad.detach(), 2) for p in parameters]), 2
+        )
         self.writer.add_scalar("fc_grad_norm", total_norm.item(), global_step=cur_iter)
-
 
     def write_scalars(self, cur_iter: int, losses: dict, **kwargs):
         if self.writer is not None:
@@ -177,7 +188,7 @@ class VAESolver:
         ):
             if training := self.model.training:
                 self.model.eval()
-                
+
             if len(self.dataset) < num_samples:
                 num_samples = len(self.dataset) // 2
             score_kwargs = dict(
@@ -195,39 +206,44 @@ class VAESolver:
             if training:
                 self.model.train()
             print("Finished calculating disentanglemnt scores!")
-    
+
     def write_gradient_flow(self, cur_iter, named_parameters):
-        '''Plots the gradients flowing through different layers in the net during training.
+        """Plots the gradients flowing through different layers in the net during training.
         Can be used for checking for possible gradient vanishing / exploding problems.
 
         From: https://discuss.pytorch.org/t/check-gradient-flow-in-network/15063/10
-        
-        Usage: Plug this function in Trainer class after loss.backwards() as 
-        "write_gradient_flow(cur_iter, self.model.named_parameters())" to visualize the gradient flow'''
+
+        Usage: Plug this function in Trainer class after loss.backwards() as
+        "write_gradient_flow(cur_iter, self.model.named_parameters())" to visualize the gradient flow"""
         if self.writer is None or cur_iter % self.test_iter != 0:
             return
 
         ave_grads = []
-        max_grads= []
+        max_grads = []
         layers = []
         for n, p in named_parameters:
-            if(p.requires_grad) and ("bias" not in n):
+            if (p.requires_grad) and ("bias" not in n):
                 layers.append(n)
                 ave_grads.append(p.grad.cpu().abs().mean())
                 max_grads.append(p.grad.cpu().abs().max())
         plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
         plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
-        plt.hlines(0, 0, len(ave_grads)+1, lw=2, color="k" )
-        plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
+        plt.hlines(0, 0, len(ave_grads) + 1, lw=2, color="k")
+        plt.xticks(range(0, len(ave_grads), 1), layers, rotation="vertical")
         plt.xlim(left=0, right=len(ave_grads))
-        plt.ylim(bottom = -0.001, top=0.02) # zoom in on the lower gradient regions
+        plt.ylim(bottom=-0.001, top=0.02)  # zoom in on the lower gradient regions
         plt.xlabel("Layers")
         plt.ylabel("average gradient")
         plt.title("Gradient flow")
         plt.grid(True)
-        plt.legend([Line2D([0], [0], color="c", lw=4),
-                    Line2D([0], [0], color="b", lw=4),
-                    Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
+        plt.legend(
+            [
+                Line2D([0], [0], color="c", lw=4),
+                Line2D([0], [0], color="b", lw=4),
+                Line2D([0], [0], color="k", lw=4),
+            ],
+            ["max-gradient", "mean-gradient", "zero-gradient"],
+        )
         assert len(plt.get_fignums()) != 0
         fig = plt.gcf()
         self.writer.add_figure("gradient_flow", fig, global_step=cur_iter, close=True)
