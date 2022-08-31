@@ -79,10 +79,10 @@ class IntroSolver(VAESolver):
             fake_mu, fake_logvar, z_fake, rec_fake = self.model(fake.detach())
 
             kl_rec = self.compute_kl_loss(
-                z, rec_mu, rec_logvar, reduce="none", beta=self.beta_neg
+                z_rec, rec_mu, rec_logvar, reduce="none", beta=self.beta_neg
             )  # shape: (batch_size,)
             kl_fake = self.compute_kl_loss(
-                z, fake_mu, fake_logvar, reduce="none", beta=self.beta_neg
+                z_fake, fake_mu, fake_logvar, reduce="none", beta=self.beta_neg
             )  # shape: (batch_size,)
 
             loss_rec_rec_e = self.compute_rec_loss(rec, rec_rec, reduction="none")  # shape: (batch_size,)
@@ -169,8 +169,8 @@ class IntroSolver(VAESolver):
             rec_rec = self.model.decode(z_rec.detach())
             rec_fake = self.model.decode(z_fake.detach())
 
-            loss_rec_rec = self.compute_rec_loss(rec.detach(), rec_rec, reduction="mean", beta=self.gamma_r)
-            loss_fake_rec = self.compute_rec_loss(fake.detach(), rec_fake,  reduction="mean", beta=self.gamma_r)
+            loss_rec_rec = self.compute_rec_loss(rec.detach(), rec_rec, reduction="mean", beta=self.gamma_r * self.beta_rec)
+            loss_fake_rec = self.compute_rec_loss(fake.detach(), rec_fake,  reduction="mean", beta=self.gamma_r * self.beta_rec)
 
             lossD_rec_kl = self.compute_kl_loss(z_rec, rec_mu, rec_logvar)
             lossD_fake_kl = self.compute_kl_loss(z_fake, fake_mu, fake_logvar)
