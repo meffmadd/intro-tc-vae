@@ -35,7 +35,7 @@ class ConvolutionalBlock(nn.Module):
             bias=False,
         )
         self.bn1 = nn.BatchNorm2d(midc, eps=self.eps)
-        self.relu1 = nn.ELU(inplace=False)
+        self.relu1 = nn.LeakyReLU(0.2, inplace=True)
         self.conv2 = nn.Conv2d(
             in_channels=midc,
             out_channels=outc,
@@ -46,7 +46,7 @@ class ConvolutionalBlock(nn.Module):
             bias=False,
         )
         self.bn2 = nn.BatchNorm2d(outc, eps=self.eps)
-        self.relu2 = nn.ELU(inplace=False)
+        self.relu2 = nn.LeakyReLU(0.2, inplace=True)
 
     def forward(self, x):
         output = self.relu1(self.bn1(self.conv1(x)))
@@ -54,9 +54,53 @@ class ConvolutionalBlock(nn.Module):
         return output
 
 
-class ResidualBlock(ConvolutionalBlock):
+class ResidualBlock(nn.Module):
+    """
+    https://github.com/hhb072/IntroVAE
+    Difference: self.bn2 on output and not on (output + identity)
+    "if inc is not outc" -> "if inc != outc"
+    """
+
     def __init__(self, inc=64, outc=64, groups=1, scale=1.0):
-        super(ResidualBlock, self).__init__(inc, outc, groups, scale)
+        super(ResidualBlock, self).__init__()
+
+        midc = int(outc * scale)
+
+        if inc != outc:
+            self.conv_expand = nn.Conv2d(
+                in_channels=inc,
+                out_channels=outc,
+                kernel_size=1,
+                stride=1,
+                padding=0,
+                groups=1,
+                bias=False,
+            )
+        else:
+            self.conv_expand = None
+
+        self.conv1 = nn.Conv2d(
+            in_channels=inc,
+            out_channels=midc,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            groups=groups,
+            bias=False,
+        )
+        self.bn1 = nn.BatchNorm2d(midc)
+        self.relu1 = nn.LeakyReLU(0.2, inplace=True)
+        self.conv2 = nn.Conv2d(
+            in_channels=midc,
+            out_channels=outc,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            groups=groups,
+            bias=False,
+        )
+        self.bn2 = nn.BatchNorm2d(outc)
+        self.relu2 = nn.LeakyReLU(0.2, inplace=True)
 
     def forward(self, x):
         if self.conv_expand is not None:
@@ -72,9 +116,7 @@ class ResidualBlock(ConvolutionalBlock):
 
 
 class Conv2dBatchNorm(nn.Module):
-    def __init__(
-        self, in_size, out_size, kernel_size, stride, padding=0, groups=1
-    ):
+    def __init__(self, in_size, out_size, kernel_size, stride, padding=0, groups=1):
         super(Conv2dBatchNorm, self).__init__()
         self.conv = nn.Conv2d(
             in_size,
@@ -87,7 +129,7 @@ class Conv2dBatchNorm(nn.Module):
         )
         self.eps = 1e-4
         self.batch_norm = nn.BatchNorm2d(out_size, eps=self.eps)
-        self.relu = nn.ELU(inplace=False)
+        self.relu = nn.LeakyReLU(0.2, inplace=True)
 
     def forward(self, x):
         x = self.conv(x)
@@ -121,15 +163,11 @@ class InceptionResnetBlock(nn.Module):
             inc, outc // 2, kernel_size=1, stride=1, groups=groups
         )
         self.branch_1 = nn.Sequential(
-            Conv2dBatchNorm(
-                inc, midc, kernel_size=1, stride=1, groups=groups
-            ),
-            Conv2dBatchNorm(
-                midc, outc // 2, kernel_size=1, stride=1, groups=groups
-            ),
+            Conv2dBatchNorm(inc, midc, kernel_size=1, stride=1, groups=groups),
+            Conv2dBatchNorm(midc, outc // 2, kernel_size=1, stride=1, groups=groups),
         )
         self.conv = nn.Conv2d(outc, outc, kernel_size=1, stride=1, groups=groups)
-        self.relu = nn.ELU(inplace=False)
+        self.relu = nn.LeakyReLU(0.2, inplace=True)
 
     def forward(self, x):
         if self.conv_expand is not None:
@@ -174,7 +212,7 @@ class Encoder(nn.Module):
         self.main = nn.Sequential(
             nn.Conv2d(cdim, cc, 5, 1, 2, bias=False),
             nn.BatchNorm2d(cc, eps=1e-4),
-            nn.ELU(inplace=False),
+            nn.LeakyReLU(0.2, inplace=True),
             nn.AvgPool2d(2),
         )
 
@@ -187,9 +225,7 @@ class Encoder(nn.Module):
             self.main.add_module("down_to_{}".format(sz // 2), nn.AvgPool2d(2))
             cc, sz = ch, sz // 2
 
-        self.main.add_module(
-            "res_in_{}".format(sz), self.conv_block(cc, cc, scale=1.0)
-        )
+        self.main.add_module("res_in_{}".format(sz), self.conv_block(cc, cc, scale=1.0))
         self.conv_output_size = self.calc_conv_output_size()
         num_fc_features = torch.zeros(self.conv_output_size).view(-1).shape[0]
         print("conv shape: ", self.conv_output_size)
@@ -229,10 +265,12 @@ class Decoder(nn.Module):
             num_fc_features = cc * 4 * 4
         else:
             num_fc_features = torch.zeros(self.conv_input_size).view(-1).shape[0]
- 
+
         self.fc = nn.Sequential(
             nn.Linear(zdim, num_fc_features),
-            nn.ELU(inplace=False) # limit output before convolutions to avoid NANs when using amp
+            nn.LeakyReLU(
+                0.2, inplace=True
+            ),  # limit output before convolutions to avoid NANs when using amp
         )
 
         sz = int(math.sqrt(num_fc_features // cc))
@@ -248,9 +286,7 @@ class Decoder(nn.Module):
             )
             cc, sz = ch, sz * 2
 
-        self.main.add_module(
-            "res_in_{}".format(sz), self.conv_block(cc, cc, scale=1.0)
-        )
+        self.main.add_module("res_in_{}".format(sz), self.conv_block(cc, cc, scale=1.0))
         self.main.add_module("predict", nn.Conv2d(cc, cdim, 5, 1, 2))
         self.main.add_module("sigmoid", nn.Sigmoid())
 

@@ -57,96 +57,63 @@ class IntroSolver(VAESolver):
         if len(batch.size()) == 3:
             batch = batch.unsqueeze(0)
 
+        b_size = batch.size(0)
+        noise_batch = torch.randn(size=(b_size, self.model.zdim)).to(self.device)
+
+        real_batch = batch.to(self.device)
+
         # =========== Update E ================
         for param in self.model.encoder.parameters():
             param.requires_grad = True
         for param in self.model.decoder.parameters():
             param.requires_grad = False
 
-        with torch.cuda.amp.autocast(enabled=self.use_amp):
-            b_size = batch.size(0)
-            noise_batch = torch.randn(size=(b_size, self.model.zdim)).to(self.device)
+        fake = self.model.sample(noise_batch)
 
-            real_batch = batch.to(self.device)
+        real_mu, real_logvar = self.model.encode(real_batch)
+        z = reparameterize(real_mu, real_logvar)
+        rec = self.model.decoder(z)
 
-            fake = self.model.sample(noise_batch)
-            real_mu, real_logvar, z, rec = self.model(real_batch)
+        loss_rec = self.compute_rec_loss(real_batch, rec, reduction="mean")
 
-            loss_rec = self.compute_rec_loss(real_batch, rec, reduction="mean")
-            lossE_real_kl = self.compute_kl_loss(z, real_mu, real_logvar)
+        lossE_real_kl = self.compute_kl_loss(z, real_mu, real_logvar)
 
-            rec_mu, rec_logvar, z_rec, rec_rec = self.model(rec.detach())
-            fake_mu, fake_logvar, z_fake, rec_fake = self.model(fake.detach())
+        rec_mu, rec_logvar, z_rec, rec_rec = self.model(rec.detach())
+        fake_mu, fake_logvar, z_fake, rec_fake = self.model(fake.detach())
 
-            kl_rec = self.compute_kl_loss(
-                z_rec, rec_mu, rec_logvar, reduce="none", beta=self.beta_neg
-            )  # shape: (batch_size,)
-            kl_fake = self.compute_kl_loss(
-                z_fake, fake_mu, fake_logvar, reduce="none", beta=self.beta_neg
-            )  # shape: (batch_size,)
+        kl_rec = self.compute_kl_loss(
+            z_rec, rec_mu, rec_logvar, reduce="none", beta=self.beta_neg
+        )
+        kl_fake = self.compute_kl_loss(
+            z_fake, fake_mu, fake_logvar, reduce="none", beta=self.beta_neg
+        )
 
-            loss_rec_rec_e = self.compute_rec_loss(rec, rec_rec, reduction="none")  # shape: (batch_size,)
-            while len(loss_rec_rec_e.shape) > 1:
-                loss_rec_rec_e = loss_rec_rec_e.sum(-1)
-            loss_rec_fake_e = self.compute_rec_loss(fake, rec_fake, reduction="none")  # shape: (batch_size,)
-            while len(loss_rec_fake_e.shape) > 1:
-                loss_rec_fake_e = loss_rec_fake_e.sum(-1)
+        loss_rec_rec_e = self.compute_rec_loss(
+            rec, rec_rec, reduction="none"
+        )  # shape: (batch_size,)
+        while len(loss_rec_rec_e.shape) > 1:
+            loss_rec_rec_e = loss_rec_rec_e.sum(-1)
+        loss_rec_fake_e = self.compute_rec_loss(
+            fake, rec_fake, reduction="none"
+        )  # shape: (batch_size,)
+        while len(loss_rec_fake_e.shape) > 1:
+            loss_rec_fake_e = loss_rec_fake_e.sum(-1)
 
-            expelbo_rec = (
-                (
-                    -2
-                    * self.scale
-                    * (loss_rec_rec_e + kl_rec)
-                )
-                .exp()
-                .mean()
-            )
-            expelbo_fake = (
-                (
-                    -2
-                    * self.scale
-                    * (loss_rec_fake_e + kl_fake)
-                )
-                .exp()
-                .mean()
-            )
+        expelbo_rec = (-2 * self.scale * (loss_rec_rec_e + kl_rec)).exp().mean()
+        expelbo_fake = (-2 * self.scale * (loss_rec_fake_e + kl_fake)).exp().mean()
 
-            lossE_fake = 0.25 * (expelbo_rec + expelbo_fake)
-            lossE_real = self.scale * (
-                loss_rec + lossE_real_kl
-            )
+        lossE_fake = 0.25 * (expelbo_rec + expelbo_fake)
+        lossE_real = self.scale * (loss_rec + lossE_real_kl)
 
-            lossE = lossE_real + lossE_fake
-
+        lossE = lossE_real + lossE_fake
         self.optimizer_e.zero_grad()
+        lossE.backward()
 
-        if self.use_amp:
-            self.grad_scaler.scale(lossE).backward()
-            if self.clip:
-                self.grad_scaler.unscale_(self.optimizer_e)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
-            self.grad_scaler.step(self.optimizer_e)
-            self.grad_scaler.update()
-        else:
-            lossE.backward()
-
-            if self.writer:
-                self.writer.add_scalar(
-                    "encoder_max_grad",
-                    torch.cat(
-                        [
-                            torch.abs(p.grad).view(-1)
-                            for p in self.model.parameters()
-                            if p.grad is not None
-                        ]
-                    ).max(),
-                    cur_iter,
-                )
-                self.writer.flush()
-
-            if self.clip:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
-            self.optimizer_e.step()
+        if self.clip:
+            total_norm_E = torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.clip
+            ).item()
+        self.optimizer_e.step()
 
         # ========= Update D ==================
         for param in self.model.encoder.parameters():
@@ -154,47 +121,43 @@ class IntroSolver(VAESolver):
         for param in self.model.decoder.parameters():
             param.requires_grad = True
 
-        with torch.cuda.amp.autocast(enabled=self.use_amp):
-            fake = self.model.sample(noise_batch)
-            rec = self.model.decoder(z.detach())
+        fake = self.model.sample(noise_batch)
+        rec = self.model.decoder(z.detach())
+        loss_rec = self.compute_rec_loss(real_batch, rec, reduction="mean")
 
-            loss_rec = self.compute_rec_loss(real_batch, rec, reduction="mean")
+        rec_mu, rec_logvar = self.model.encode(rec)
+        z_rec = reparameterize(rec_mu, rec_logvar)
 
-            rec_mu, rec_logvar = self.model.encode(rec)
-            z_rec = reparameterize(rec_mu, rec_logvar)
+        fake_mu, fake_logvar = self.model.encode(fake)
+        z_fake = reparameterize(fake_mu, fake_logvar)
 
-            fake_mu, fake_logvar = self.model.encode(fake)
-            z_fake = reparameterize(fake_mu, fake_logvar)
+        rec_rec = self.model.decode(z_rec.detach())
+        rec_fake = self.model.decode(z_fake.detach())
 
-            rec_rec = self.model.decode(z_rec.detach())
-            rec_fake = self.model.decode(z_fake.detach())
+        loss_rec_rec = self.compute_rec_loss(
+            rec.detach(), rec_rec, reduction="mean", beta=self.gamma_r * self.beta_rec
+        )
+        loss_fake_rec = self.compute_rec_loss(
+            fake.detach(), rec_fake, reduction="mean", beta=self.gamma_r * self.beta_rec
+        )
 
-            loss_rec_rec = self.compute_rec_loss(rec.detach(), rec_rec, reduction="mean", beta=self.gamma_r * self.beta_rec)
-            loss_fake_rec = self.compute_rec_loss(fake.detach(), rec_fake,  reduction="mean", beta=self.gamma_r * self.beta_rec)
+        lossD_rec_kl = self.compute_kl_loss(z_rec, rec_mu, rec_logvar)
+        lossD_fake_kl = self.compute_kl_loss(z_fake, fake_mu, fake_logvar)
 
-            lossD_rec_kl = self.compute_kl_loss(z_rec, rec_mu, rec_logvar)
-            lossD_fake_kl = self.compute_kl_loss(z_fake, fake_mu, fake_logvar)
-
-            lossD = self.scale * (
-                loss_rec
-                + (lossD_rec_kl + lossD_fake_kl) * 0.5
-                + (loss_rec_rec + loss_fake_rec) * 0.5
-            )
+        lossD = self.scale * (
+            loss_rec
+            + (lossD_rec_kl + lossD_fake_kl) * 0.5
+            + (loss_rec_rec + loss_fake_rec) * 0.5
+        )
 
         self.optimizer_d.zero_grad()
-
-        if self.use_amp:
-            self.grad_scaler.scale(lossD).backward()
-            if self.clip:
-                self.grad_scaler.unscale_(self.optimizer_d)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
-            self.grad_scaler.step(self.optimizer_d)
-            self.grad_scaler.update()
-        else:
-            lossD.backward()
-            if self.clip:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
-            self.optimizer_d.step()
+        lossD.backward()
+        
+        if self.clip:
+            total_norm_D = torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.clip
+            ).item()
+        self.optimizer_d.step()
 
         if torch.isnan(lossD) or torch.isnan(lossE):
             raise RuntimeError
@@ -210,6 +173,12 @@ class IntroSolver(VAESolver):
                 ),
                 diff_kl=dif_kl.item(),
             )
+            if self.clip:
+                self.writer.add_scalars(
+                    "total_norm",
+                    {"E": total_norm_E, "D": total_norm_D},
+                    global_step=cur_iter,
+                )
             self.write_gradient_flow(cur_iter, self.model.named_parameters())
             self.writer.add_scalar("lossE", lossE, global_step=cur_iter)
             self.writer.add_scalar("lossD", lossD, global_step=cur_iter)
@@ -223,4 +192,5 @@ class IntroSolver(VAESolver):
             "loss_dec": lossD.data.cpu().item(),
             "loss_kl": lossE_real_kl.data.cpu().item(),
             "loss_rec": loss_rec.data.cpu().item(),
+            "L2": max(total_norm_E, total_norm_D),
         }

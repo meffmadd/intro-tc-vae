@@ -85,32 +85,21 @@ class VAESolver:
         real_batch = batch.to(self.device)
 
         # =========== Update E, D ================
-        with torch.cuda.amp.autocast() if self.use_amp else nullcontext():
-            real_mu, real_logvar, z, rec = self.model(real_batch)
+        real_mu, real_logvar, z, rec = self.model(real_batch)
 
-            loss_rec = self.compute_rec_loss(real_batch, rec, reduction="mean")
-            loss_kl = self.compute_kl_loss(z, real_mu, real_logvar)
+        loss_rec = self.compute_rec_loss(real_batch, rec, reduction="mean")
+        loss_kl = self.compute_kl_loss(z, real_mu, real_logvar)
 
-            loss = self.scale * (loss_rec + loss_kl)
+        loss = self.scale * (loss_rec + loss_kl)
 
         self.optimizer_d.zero_grad()
         self.optimizer_e.zero_grad()
 
-        if self.use_amp:
-            self.grad_scaler.scale(loss).backward()
-            if self.clip:
-                self.grad_scaler.unscale_(self.optimizer_e)
-                self.grad_scaler.unscale_(self.optimizer_d)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
-            self.grad_scaler.step(self.optimizer_e)
-            self.grad_scaler.step(self.optimizer_d)
-            self.grad_scaler.update()
-        else:
-            loss.backward()
-            if self.clip:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
-            self.optimizer_e.step()
-            self.optimizer_d.step()
+        loss.backward()
+        if self.clip:
+            total_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip).item()
+        self.optimizer_e.step()
+        self.optimizer_d.step()
 
         if torch.isnan(loss):
             raise RuntimeError
@@ -123,6 +112,8 @@ class VAESolver:
                     loss_kl=loss_kl.data.cpu().item(),
                 ),
             )
+            if self.clip:
+                self.writer.add_scalar("total_norm", total_norm, global_step=cur_iter)
             self.write_gradient_norm(cur_iter)
             self._write_images_helper(real_batch, cur_iter)
             self.write_disentanglemnt_scores(cur_iter)
@@ -133,6 +124,7 @@ class VAESolver:
             "loss_dec": loss.data.cpu().item(),
             "loss_kl": loss_kl.data.cpu().item(),
             "loss_rec": loss_rec.data.cpu().item(),
+            "L2": total_norm
         }
 
     def _write_images_helper(self, batch, cur_iter):

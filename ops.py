@@ -15,7 +15,7 @@ import math
 def gaussian_log_density_torch(x: Tensor, mu: Tensor, logvar: Tensor) -> Tensor:
     """Computes the log density of a Gaussian. This is just the simplified log of the PDF of a normal distribution."""
     var = torch.exp(logvar)
-    log_prob = -F.gaussian_nll_loss(x, mu, var, reduction="none", eps=1e-3, full=True)
+    log_prob = -F.gaussian_nll_loss(x, mu, var, reduction="none", eps=1e-4, full=True)
     # only clamp return value (don't use large eps) since we may still have small (x-mu)/var
     # semantically log probabilities of -50 or -5000 make no difference (still 0)
     return torch.clamp(log_prob, min=-50)
@@ -77,8 +77,8 @@ def total_correlation(
     # Compute log(q(z(x_j)|x_i)) for every sample in the batch, which is a
     # tensor of size [batch_size, batch_size, num_latents]. In the following
     # comments, [batch_size, batch_size, num_latents] are indexed by [j, i, l].
-    log_qz_prob = gaussian_log_density(
-        z.unsqueeze(1), mu.unsqueeze(0), logvar.unsqueeze(0)
+    log_qz_prob = gaussian_log_density_torch(
+        z.unsqueeze(1), mu.unsqueeze(0), logvar.unsqueeze(1)
     )
 
     log_qz_product, log_qz = minibatch_stratified_sampling(log_qz_prob, batch_size, dataset_size)
@@ -218,8 +218,13 @@ def reconstruction_loss(x, recon_x, loss_type="mse", reduction="sum") -> Tensor:
         raise NotImplementedError
     recon_x = recon_x.view(recon_x.size(0), -1)
     x = x.view(x.size(0), -1).detach()
-    if loss_type == "mse":
-        recon_error = F.mse_loss(recon_x, x, reduction=reduction)
+    if loss_type == 'mse':
+        recon_error = F.mse_loss(recon_x, x, reduction='none')
+        recon_error = recon_error.sum(1)
+        if reduction == 'sum':
+            recon_error = recon_error.sum()
+        elif reduction == 'mean':
+            recon_error = recon_error.mean()
     elif loss_type == "l1":
         recon_error = F.l1_loss(recon_x, x, reduction=reduction)
     elif loss_type == "bce":

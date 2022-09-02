@@ -4,8 +4,10 @@ from typing import Optional
 from models import SoftIntroVAE
 from ops import (
     gaussian_log_density,
+    kl_divergence,
     minibatch_stratified_sampling,
     minibatch_weighted_sampling,
+    total_correlation,
 )
 
 from contextlib import nullcontext
@@ -52,7 +54,37 @@ class TCSovler(VAESolver):
             clip,
         )
 
+
     def compute_kl_loss(
+        self,
+        z: Optional[Tensor],
+        mu: Tensor,
+        logvar: Tensor,
+        reduce: str = "mean",
+        beta: float = None,
+    ) -> Tensor:
+        return TCSovler._compute_kl_loss_simple(self, z, mu, logvar, reduce, beta)
+
+    def _compute_kl_loss_simple(
+        self,
+        z: Optional[Tensor],
+        mu: Tensor,
+        logvar: Tensor,
+        reduce: str = "mean",
+        beta: float = None,
+    ) -> Tensor:
+        if beta is None:
+            beta = self.beta_kl
+
+        dataset_size = len(self.dataset)
+
+        kl_loss = kl_divergence(logvar, mu, reduce=reduce)
+        tc = total_correlation(
+            z, mu, logvar, dataset_size, reduce=reduce
+        )
+        return (beta - 1.0) * tc + kl_loss
+
+    def _compute_kl_loss_full(
         self,
         z: Optional[Tensor],
         mu: Tensor,

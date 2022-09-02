@@ -213,20 +213,12 @@ def train_soft_intro_vae(config: Config):
                 loss_dict = solver.train_step(batch, cur_iter)
                 postfix = loss_dict.copy()
 
-                if config.anomaly_detection:
-                    with torch.no_grad():
-                        max = float("-inf")
-                        for p in model.parameters():
-                            norm = torch.sum(p.grad.data**2).item()
-                            if norm > max:
-                                max = norm
-                    postfix.update({"L2": f"{max:.1f}"})
-
                 pbar.set_postfix(postfix)
                 if config.profile and cur_iter == 50:
                     break
 
                 if epoch == config.num_epochs - 1:
+                    loss_dict.pop("L2")
                     last_epoch_loss += loss_dict
 
                 cur_iter += 1
