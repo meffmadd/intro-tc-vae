@@ -220,15 +220,17 @@ def reconstruction_loss(x, recon_x, loss_type="mse", reduction="sum") -> Tensor:
     x = x.view(x.size(0), -1).detach()
     if loss_type == 'mse':
         recon_error = F.mse_loss(recon_x, x, reduction='none')
-        recon_error = recon_error.sum(1)
-        if reduction == 'sum':
-            recon_error = recon_error.sum()
-        elif reduction == 'mean':
-            recon_error = recon_error.mean()
     elif loss_type == "l1":
-        recon_error = F.l1_loss(recon_x, x, reduction=reduction)
+        recon_error = F.l1_loss(recon_x, x, reduction='none')
     elif loss_type == "bce":
-        recon_error = F.binary_cross_entropy(recon_x, x, reduction=reduction)
+        recon_error = F.binary_cross_entropy(recon_x, x, reduction='none')
     else:
         raise NotImplementedError
+    
+    recon_error = recon_error.sum(1)
+    if reduction == 'sum':
+        recon_error = recon_error.sum()
+    elif reduction == 'mean':
+        recon_error = recon_error.mean()
+
     return recon_error
