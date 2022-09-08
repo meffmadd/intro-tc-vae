@@ -62,8 +62,9 @@ class TCSovler(VAESolver):
         logvar: Tensor,
         reduce: str = "mean",
         beta: float = None,
+        write: bool = False
     ) -> Tensor:
-        return TCSovler._compute_kl_loss_simple(self, z, mu, logvar, reduce, beta)
+        return TCSovler._compute_kl_loss_simple(self, z, mu, logvar, reduce, beta, write)
 
     def _compute_kl_loss_simple(
         self,
@@ -72,6 +73,7 @@ class TCSovler(VAESolver):
         logvar: Tensor,
         reduce: str = "mean",
         beta: float = None,
+        write: bool = False
     ) -> Tensor:
         if beta is None:
             beta = self.beta_kl
@@ -82,6 +84,8 @@ class TCSovler(VAESolver):
         tc = total_correlation(
             z, mu, logvar, dataset_size, reduce=reduce
         )
+        if write:
+            self.write_scalar(SingletonWriter().cur_iter, "kl_loss_unscaled", kl_loss)
         return (beta - 1.0) * tc + kl_loss
 
     def _compute_kl_loss_full(
@@ -91,6 +95,7 @@ class TCSovler(VAESolver):
         logvar: Tensor,
         reduce: str = "mean",
         beta: float = None,
+        write: bool = False
     ) -> Tensor:
         if beta is None:
             beta = self.beta_kl
@@ -132,6 +137,8 @@ class TCSovler(VAESolver):
                     },
                     global_step=SingletonWriter().cur_iter,
                 )
+        if write:
+            self.write_scalar(SingletonWriter().cur_iter, "kl_loss_unscaled", mi_loss + tc_loss + kl_loss)
 
         # recombine to get loss:
         return mi_loss + beta * tc_loss + kl_loss

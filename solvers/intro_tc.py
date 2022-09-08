@@ -12,5 +12,6 @@ class IntroTCSovler(IntroSolver):
         logvar: Tensor,
         reduce: str = "mean",
         beta: float = None,
+        write: bool = False
     ) -> Tensor:
-        return TCSovler.compute_kl_loss(self, z, mu, logvar, reduce, beta)
+        return TCSovler.compute_kl_loss(self, z, mu, logvar, reduce, beta, write)

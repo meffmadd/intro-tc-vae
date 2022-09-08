@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from ops import kl_divergence, reconstruction_loss
+from utils import SingletonWriter
 
 
 class VAESolver:
@@ -66,17 +67,24 @@ class VAESolver:
         logvar: Tensor,
         reduce: str = "mean",
         beta: float = None,
+        write: bool = False
     ) -> Tensor:
         if beta is None:
             beta = self.beta_kl
-        return beta * kl_divergence(logvar, mu, reduce=reduce)
+        kl = kl_divergence(logvar, mu, reduce=reduce)
+        if write:
+            self.write_scalar(SingletonWriter().cur_iter, "kl_loss_unscaled", kl)
+        return beta * kl
 
     def compute_rec_loss(
-        self, x, recon_x, reduction="sum", beta: float = None
+        self, x, recon_x, reduction="sum", beta: float = None, write: bool = False
     ) -> Tensor:
         if beta is None:
             beta = self.beta_rec
-        return beta * reconstruction_loss(x, recon_x, self.recon_loss_type, reduction)
+        rec = reconstruction_loss(x, recon_x, self.recon_loss_type, reduction)
+        if write:
+            self.write_scalar(SingletonWriter().cur_iter, "r_loss_unscaled", rec)
+        return beta * rec
 
     def train_step(self, batch: Tensor, cur_iter: int) -> dict:
         if len(batch.size()) == 3:
@@ -87,8 +95,8 @@ class VAESolver:
         # =========== Update E, D ================
         real_mu, real_logvar, z, rec = self.model(real_batch)
 
-        loss_rec = self.compute_rec_loss(real_batch, rec, reduction="mean")
-        loss_kl = self.compute_kl_loss(z, real_mu, real_logvar)
+        loss_rec = self.compute_rec_loss(real_batch, rec, reduction="mean", write=True)
+        loss_kl = self.compute_kl_loss(z, real_mu, real_logvar, write=True)
 
         loss = self.scale * (loss_rec + loss_kl)
 
@@ -108,8 +116,8 @@ class VAESolver:
             self.write_scalars(
                 cur_iter,
                 losses=dict(
-                    loss_rec=loss_rec.data.cpu().item(),
-                    loss_kl=loss_kl.data.cpu().item(),
+                    r_loss=loss_rec.data.cpu().item(),
+                    kl_loss=loss_kl.data.cpu().item(),
                 ),
             )
             if self.clip:
@@ -161,6 +169,11 @@ class VAESolver:
             torch.stack([torch.norm(p.grad.detach(), 2) for p in parameters]), 2
         )
         self.writer.add_scalar("fc_grad_norm", total_norm.item(), global_step=cur_iter)
+    
+    def write_scalar(self, cur_iter: int, tag: str, value: Tensor):
+        if self.writer and value.dim() == 0:
+            self.writer.add_scalar(tag, value.data.item(), global_step=cur_iter)
+
 
     def write_scalars(self, cur_iter: int, losses: dict, **kwargs):
         if self.writer is not None:

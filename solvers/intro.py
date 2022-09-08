@@ -76,7 +76,7 @@ class IntroSolver(VAESolver):
 
         loss_rec = self.compute_rec_loss(real_batch, rec, reduction="mean")
 
-        lossE_real_kl = self.compute_kl_loss(z, real_mu, real_logvar)
+        lossE_real_kl = self.compute_kl_loss(z, real_mu, real_logvar, write=True)
 
         rec_mu, rec_logvar, z_rec, rec_rec = self.model(rec.detach())
         fake_mu, fake_logvar, z_fake, rec_fake = self.model(fake.detach())
@@ -123,7 +123,7 @@ class IntroSolver(VAESolver):
 
         fake = self.model.sample(noise_batch)
         rec = self.model.decoder(z.detach())
-        loss_rec = self.compute_rec_loss(real_batch, rec, reduction="mean")
+        loss_rec = self.compute_rec_loss(real_batch, rec, reduction="mean", write=True)
 
         rec_mu, rec_logvar = self.model.encode(rec)
         z_rec = reparameterize(rec_mu, rec_logvar)
@@ -168,7 +168,7 @@ class IntroSolver(VAESolver):
                 cur_iter,
                 losses=dict(
                     r_loss=loss_rec.data.cpu().item(),
-                    kl=lossE_real_kl.data.cpu().item(),
+                    kl_loss=lossE_real_kl.data.cpu().item(),
                     expelbo_f=expelbo_fake.cpu().item(),
                 ),
                 diff_kl=dif_kl.item(),
